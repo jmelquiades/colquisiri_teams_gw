@@ -1,13 +1,19 @@
 from __future__ import annotations
 import os, logging, msal
 from fastapi import FastAPI, Request
-from botbuilder.core import ConversationState, MemoryStorage, TurnContext
 from botbuilder.schema import Activity
-from botbuilder.core.cloud_adapter import CloudAdapter
-from botframework.connector.auth import (
-    ConfigurationBotFrameworkAuthentication,
-    MicrosoftAppCredentials,
-)
+from botbuilder.core import ConversationState, MemoryStorage, TurnContext
+
+# Intentar CloudAdapter; si no existe, usar el clásico
+USE_CLOUD = True
+try:
+    from botbuilder.core.cloud_adapter import CloudAdapter
+    from botframework.connector.auth import ConfigurationBotFrameworkAuthentication
+except Exception:
+    USE_CLOUD = False
+    from botbuilder.core import BotFrameworkAdapter, BotFrameworkAdapterSettings
+
+from botframework.connector.auth import MicrosoftAppCredentials
 from .settings import settings
 from .bot import TeamsGatewayBot
 from .health import router as health_router
@@ -18,19 +24,27 @@ logger = logging.getLogger("teams_gw.app")
 app = FastAPI(title="teams_gw")
 app.include_router(health_router)
 
-# === Forzar a que CloudAdapter lea exactamente estas credenciales (MultiTenant) ===
+# Mantener MultiTenant y tus nombres de variables
 os.environ["MicrosoftAppId"] = settings.MICROSOFT_APP_ID
 os.environ["MicrosoftAppPassword"] = settings.MICROSOFT_APP_PASSWORD
-# Respetamos tu configuración actual (MultiTenant) sin pedir cambios
 os.environ["MicrosoftAppType"] = os.getenv("MicrosoftAppType", "MultiTenant")
 
-# Construimos CloudAdapter con configuración por entorno
-adapter = CloudAdapter(ConfigurationBotFrameworkAuthentication())
+# Construir adapter
+if USE_CLOUD:
+    adapter = CloudAdapter(ConfigurationBotFrameworkAuthentication())
+    adapter_kind = "CloudAdapter"
+else:
+    adapter = BotFrameworkAdapter(
+        BotFrameworkAdapterSettings(settings.MICROSOFT_APP_ID, settings.MICROSOFT_APP_PASSWORD)
+    )
+    adapter_kind = "BotFrameworkAdapter"
+
 conversation_state = ConversationState(MemoryStorage())
 bot = TeamsGatewayBot()
 
 logger.info(
-    "Startup teams_gw | app_id_end=%s app_type=%s",
+    "Startup teams_gw | adapter=%s app_id_end=%s app_type=%s",
+    adapter_kind,
     settings.MICROSOFT_APP_ID[-6:],
     os.environ["MicrosoftAppType"],
 )
@@ -51,10 +65,11 @@ async def messages(request: Request):
     await adapter.process_activity(activity, auth_header, aux_logic)
     return {"ok": True}
 
-# ===== Probes de diagnostico (no exponen secretos) =====
+# Probes útiles (no exponen secretos)
 @app.get("/__cred-check")
 async def cred_check():
     return {
+        "adapter": adapter_kind,
         "MicrosoftAppId_end": settings.MICROSOFT_APP_ID[-6:],
         "MicrosoftAppPassword_present": bool(settings.MICROSOFT_APP_PASSWORD),
         "MicrosoftAppType": os.environ.get("MicrosoftAppType"),
@@ -62,7 +77,7 @@ async def cred_check():
 
 @app.get("/__auth-probe")
 async def auth_probe():
-    # Pide token como app para el scope de Bot Framework (MultiTenant)
+    # Token de app para BotFramework (MultiTenant = organizations)
     app_msal = msal.ConfidentialClientApplication(
         client_id=settings.MICROSOFT_APP_ID,
         client_credential=settings.MICROSOFT_APP_PASSWORD,
