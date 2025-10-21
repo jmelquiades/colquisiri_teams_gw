@@ -1,4 +1,5 @@
 from __future__ import annotations
+import os, logging
 from fastapi import FastAPI, Request
 from botbuilder.core import (
     BotFrameworkAdapterSettings,
@@ -9,15 +10,20 @@ from botbuilder.core import (
 )
 from botbuilder.schema import Activity
 from .settings import settings
-    # ^^^  asegúrate de que el import apunta a teams_gw.settings
 from .bot import TeamsGatewayBot
 from .health import router as health_router
+
+# Exporta los nombres que la SDK también busca
+os.environ.setdefault("MicrosoftAppId", settings.MICROSOFT_APP_ID)
+os.environ.setdefault("MicrosoftAppPassword", os.getenv("MICROSOFT_APP_PASSWORD", ""))
+if settings.MICROSOFT_APP_TENANT_ID:
+    os.environ.setdefault("MicrosoftAppTenantId", settings.MICROSOFT_APP_TENANT_ID)
 
 app = FastAPI(title="teams_gw")
 app.include_router(health_router)
 
 adapter = BotFrameworkAdapter(
-    BotFrameworkAdapterSettings(settings.MICROSOFT_APP_ID, settings.MICROSOFT_APP_PASSWORD)
+    BotFrameworkAdapterSettings(settings.MICROSOFT_APP_ID, os.getenv("MICROSOFT_APP_PASSWORD", ""))
 )
 
 conversation_state = ConversationState(MemoryStorage())
