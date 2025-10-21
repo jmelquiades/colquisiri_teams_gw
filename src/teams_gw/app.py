@@ -1,15 +1,13 @@
 from __future__ import annotations
-import os, logging
+import os, logging, msal
 from fastapi import FastAPI, Request
-from botbuilder.core import (
-    BotFrameworkAdapterSettings,
-    BotFrameworkAdapter,
-    ConversationState,
-    MemoryStorage,
-    TurnContext,
-)
+from botbuilder.core import ConversationState, MemoryStorage, TurnContext
 from botbuilder.schema import Activity
-from botframework.connector.auth import MicrosoftAppCredentials
+from botbuilder.core.cloud_adapter import CloudAdapter
+from botframework.connector.auth import (
+    ConfigurationBotFrameworkAuthentication,
+    MicrosoftAppCredentials,
+)
 from .settings import settings
 from .bot import TeamsGatewayBot
 from .health import router as health_router
@@ -20,19 +18,21 @@ logger = logging.getLogger("teams_gw.app")
 app = FastAPI(title="teams_gw")
 app.include_router(health_router)
 
-# ⚠️ Importante: tomamos ID/SECRET desde settings (que ya acepta camelCase)
-APP_ID = settings.MICROSOFT_APP_ID
-APP_SECRET = settings.MICROSOFT_APP_PASSWORD
+# === Forzar a que CloudAdapter lea exactamente estas credenciales (MultiTenant) ===
+os.environ["MicrosoftAppId"] = settings.MICROSOFT_APP_ID
+os.environ["MicrosoftAppPassword"] = settings.MICROSOFT_APP_PASSWORD
+# Respetamos tu configuración actual (MultiTenant) sin pedir cambios
+os.environ["MicrosoftAppType"] = os.getenv("MicrosoftAppType", "MultiTenant")
 
-# Construye adapter clásico con credenciales explícitas (sin depender de env)
-adapter = BotFrameworkAdapter(BotFrameworkAdapterSettings(APP_ID, APP_SECRET))
+# Construimos CloudAdapter con configuración por entorno
+adapter = CloudAdapter(ConfigurationBotFrameworkAuthentication())
 conversation_state = ConversationState(MemoryStorage())
 bot = TeamsGatewayBot()
 
 logger.info(
-    "Startup teams_gw | app_id_end=%s secret_present=%s",
-    (APP_ID[-6:] if APP_ID else "None"),
-    bool(APP_SECRET),
+    "Startup teams_gw | app_id_end=%s app_type=%s",
+    settings.MICROSOFT_APP_ID[-6:],
+    os.environ["MicrosoftAppType"],
 )
 
 @app.post("/api/messages")
@@ -51,15 +51,29 @@ async def messages(request: Request):
     await adapter.process_activity(activity, auth_header, aux_logic)
     return {"ok": True}
 
+# ===== Probes de diagnostico (no exponen secretos) =====
 @app.get("/__cred-check")
 async def cred_check():
-    # Diagnóstico mínimo sin exponer secretos
     return {
-        "adapter": "BotFrameworkAdapter",
-        "settings_app_id_end": (APP_ID[-6:] if APP_ID else None),
-        "settings_secret_present": bool(APP_SECRET),
-        "env_MICROSOFT_APP_PASSWORD_present": bool(os.getenv("MICROSOFT_APP_PASSWORD")),
-        "env_MicrosoftAppPassword_present": bool(os.getenv("MicrosoftAppPassword")),
+        "MicrosoftAppId_end": settings.MICROSOFT_APP_ID[-6:],
+        "MicrosoftAppPassword_present": bool(settings.MICROSOFT_APP_PASSWORD),
+        "MicrosoftAppType": os.environ.get("MicrosoftAppType"),
+    }
+
+@app.get("/__auth-probe")
+async def auth_probe():
+    # Pide token como app para el scope de Bot Framework (MultiTenant)
+    app_msal = msal.ConfidentialClientApplication(
+        client_id=settings.MICROSOFT_APP_ID,
+        client_credential=settings.MICROSOFT_APP_PASSWORD,
+        authority="https://login.microsoftonline.com/organizations",
+    )
+    tok = app_msal.acquire_token_for_client(scopes=["https://api.botframework.com/.default"])
+    return {
+        "ok": bool(tok.get("access_token")),
+        "expires_in": tok.get("expires_in"),
+        "error": tok.get("error"),
+        "error_description": tok.get("error_description"),
     }
 
 @app.get("/")
