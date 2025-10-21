@@ -1,53 +1,33 @@
 from __future__ import annotations
-import os, logging, msal
+import logging
 from fastapi import FastAPI, Request
+from botbuilder.core import (
+    BotFrameworkAdapterSettings,
+    BotFrameworkAdapter,
+    ConversationState,
+    MemoryStorage,
+    TurnContext,
+)
 from botbuilder.schema import Activity
-from botbuilder.core import ConversationState, MemoryStorage, TurnContext
-
-# Intentar CloudAdapter; si no existe, usar el clásico
-USE_CLOUD = True
-try:
-    from botbuilder.core.cloud_adapter import CloudAdapter
-    from botframework.connector.auth import ConfigurationBotFrameworkAuthentication
-except Exception:
-    USE_CLOUD = False
-    from botbuilder.core import BotFrameworkAdapter, BotFrameworkAdapterSettings
-
 from botframework.connector.auth import MicrosoftAppCredentials
+
 from .settings import settings
 from .bot import TeamsGatewayBot
 from .health import router as health_router
 
-logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
-logger = logging.getLogger("teams_gw.app")
+log = logging.getLogger("teams_gw.app")
+logging.basicConfig(level=logging.INFO)
 
 app = FastAPI(title="teams_gw")
 app.include_router(health_router)
 
-# Mantener MultiTenant y tus nombres de variables
-os.environ["MicrosoftAppId"] = settings.MICROSOFT_APP_ID
-os.environ["MicrosoftAppPassword"] = settings.MICROSOFT_APP_PASSWORD
-os.environ["MicrosoftAppType"] = os.getenv("MicrosoftAppType", "MultiTenant")
-
-# Construir adapter
-if USE_CLOUD:
-    adapter = CloudAdapter(ConfigurationBotFrameworkAuthentication())
-    adapter_kind = "CloudAdapter"
-else:
-    adapter = BotFrameworkAdapter(
-        BotFrameworkAdapterSettings(settings.MICROSOFT_APP_ID, settings.MICROSOFT_APP_PASSWORD)
-    )
-    adapter_kind = "BotFrameworkAdapter"
+# Adapter clásico, sin cambiar envs
+adapter = BotFrameworkAdapter(
+    BotFrameworkAdapterSettings(settings.MICROSOFT_APP_ID, settings.MICROSOFT_APP_PASSWORD)
+)
 
 conversation_state = ConversationState(MemoryStorage())
 bot = TeamsGatewayBot()
-
-logger.info(
-    "Startup teams_gw | adapter=%s app_id_end=%s app_type=%s",
-    adapter_kind,
-    settings.MICROSOFT_APP_ID[-6:],
-    os.environ["MicrosoftAppType"],
-)
 
 @app.post("/api/messages")
 async def messages(request: Request):
@@ -55,7 +35,24 @@ async def messages(request: Request):
     activity = Activity().deserialize(body)
     auth_header = request.headers.get("Authorization", "")
 
-    # Confiar en el serviceUrl de Teams para poder responder
+    # --- Diagnóstico útil en logs ---
+    env_app = settings.MICROSOFT_APP_ID
+    rid = (activity.recipient and activity.recipient.id) or ""
+    rid_norm = rid.split(":", 1)[-1] if rid else ""
+    log.info(
+        "Incoming activity: {'type': %s, 'channel_id': %s, 'service_url': %s, "
+        "'conversation_id': %s, 'from_id': %s, 'recipient_id': %s, 'recipient_id_normalized': %s, 'env_app_id': %s}",
+        activity.type,
+        activity.channel_id,
+        activity.service_url,
+        (activity.conversation and activity.conversation.id),
+        (activity.from_property and activity.from_property.id),
+        rid,
+        rid_norm,
+        env_app,
+    )
+
+    # 1) Confiar el service_url ANTES de responder (mitiga 401 del conector)
     if getattr(activity, "service_url", None):
         MicrosoftAppCredentials.trust_service_url(activity.service_url)
 
@@ -65,32 +62,14 @@ async def messages(request: Request):
     await adapter.process_activity(activity, auth_header, aux_logic)
     return {"ok": True}
 
-# Probes útiles (no exponen secretos)
-@app.get("/__cred-check")
-async def cred_check():
-    return {
-        "adapter": adapter_kind,
-        "MicrosoftAppId_end": settings.MICROSOFT_APP_ID[-6:],
-        "MicrosoftAppPassword_present": bool(settings.MICROSOFT_APP_PASSWORD),
-        "MicrosoftAppType": os.environ.get("MicrosoftAppType"),
-    }
-
-@app.get("/__auth-probe")
-async def auth_probe():
-    # Token de app para BotFramework (MultiTenant = organizations)
-    app_msal = msal.ConfidentialClientApplication(
-        client_id=settings.MICROSOFT_APP_ID,
-        client_credential=settings.MICROSOFT_APP_PASSWORD,
-        authority="https://login.microsoftonline.com/organizations",
-    )
-    tok = app_msal.acquire_token_for_client(scopes=["https://api.botframework.com/.default"])
-    return {
-        "ok": bool(tok.get("access_token")),
-        "expires_in": tok.get("expires_in"),
-        "error": tok.get("error"),
-        "error_description": tok.get("error_description"),
-    }
-
 @app.get("/")
 async def root():
     return {"service": app.title, "ready": True}
+
+# Sonda para comprobar que el par AppId/AppPassword obtiene token (sin tocar envs)
+@app.get("/__auth-probe")
+async def auth_probe():
+    creds = MicrosoftAppCredentials(settings.MICROSOFT_APP_ID, settings.MICROSOFT_APP_PASSWORD)
+    token = await creds.get_access_token()
+    # si falla, levanta PermissionError y verás el stack en logs; si no, ok
+    return {"ok": True, "expires_in": 3599 if token else 0}
