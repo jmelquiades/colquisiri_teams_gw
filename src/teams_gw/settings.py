@@ -1,30 +1,37 @@
 from __future__ import annotations
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import List
 import os
+from typing import List, Optional
+from pydantic import Field, AliasChoices
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
-    # Bot
-    MICROSOFT_APP_ID: str
-    MICROSOFT_APP_PASSWORD: str
-    MICROSOFT_APP_TENANT_ID: str | None = None
+    # Lee .env si existe y no distingue mayúsc/minúsculas
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
 
-    # N2SQL
+    # === Microsoft Bot Framework (acepta UPPER y camelCase) ===
+    MICROSOFT_APP_ID: str = Field(
+        validation_alias=AliasChoices("MICROSOFT_APP_ID", "MicrosoftAppId")
+    )
+    MICROSOFT_APP_PASSWORD: str = Field(
+        validation_alias=AliasChoices("MICROSOFT_APP_PASSWORD", "MicrosoftAppPassword")
+    )
+    MICROSOFT_APP_TENANT_ID: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("MICROSOFT_APP_TENANT_ID", "MicrosoftAppTenantId"),
+    )
+
+    # === N2SQL ===
     N2SQL_URL: str
     N2SQL_QUERY_PATH: str = "/v1/query"
-    N2SQL_API_KEY: str | None = None
+    N2SQL_API_KEY: Optional[str] = None
     N2SQL_TIMEOUT_S: int = 30
-    N2SQL_DATASET: str = "odoo"
 
-    # App
+    # === App ===
     APP_TZ: str = "America/Lima"
     N2SQL_TRIGGERS: str = "dt:,consulta ,n2sql:"
     N2SQL_MAX_ROWS: int = 20
     PORT: int = int(os.getenv("PORT", "8000"))
     ENV: str = os.getenv("ENV", "prod")
-
-    # pydantic-settings v2 style
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     @property
     def triggers(self) -> List[str]:
