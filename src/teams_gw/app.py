@@ -1,14 +1,20 @@
 from __future__ import annotations
 import os, logging
 from fastapi import FastAPI, Request
-from botbuilder.core import (
-    ConversationState,
-    MemoryStorage,
-    TurnContext,
-)
+from botbuilder.core import ConversationState, MemoryStorage, TurnContext
 from botbuilder.schema import Activity
-from botbuilder.core import CloudAdapter, ConfigurationBotFrameworkAuthentication
 from botframework.connector.auth import MicrosoftAppCredentials
+
+# --- Auth/Adapter: preferir CloudAdapter si existe, si no fallback ---
+USE_CLOUD = False
+try:
+    # Algunos builds no exportan CloudAdapter en __init__, import directo del módulo:
+    from botbuilder.core.cloud_adapter import CloudAdapter  # type: ignore
+    from botframework.connector.auth import ConfigurationBotFrameworkAuthentication
+    USE_CLOUD = True
+except Exception:
+    from botbuilder.core import BotFrameworkAdapter, BotFrameworkAdapterSettings  # fallback
+
 from .settings import settings
 from .bot import TeamsGatewayBot
 from .health import router as health_router
@@ -16,20 +22,29 @@ from .health import router as health_router
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("teams_gw.app")
 
-# Exporta nombres que la SDK espera (CloudAdapter lee estos)
+# La SDK también lee estas envs:
 os.environ.setdefault("MicrosoftAppId", settings.MICROSOFT_APP_ID)
 os.environ.setdefault("MicrosoftAppPassword", os.getenv("MICROSOFT_APP_PASSWORD", ""))
 if settings.MICROSOFT_APP_TENANT_ID:
     os.environ.setdefault("MicrosoftAppTenantId", settings.MICROSOFT_APP_TENANT_ID)
-# Si tu bot es single-tenant, MicrosoftAppType debe ser "SingleTenant"
-# Si es multi-tenant, usa "MultiTenant"
-os.environ.setdefault("MicrosoftAppType", os.getenv("MICROSOFT_APP_TYPE", "SingleTenant"))
+# Si tu app es single-tenant, deja SingleTenant; si es multi-tenant, cambia a MultiTenant
+os.environ.setdefault("MicrosoftAppType", os.getenv("MicrosoftAppType", "SingleTenant"))
 
 app = FastAPI(title="teams_gw")
 app.include_router(health_router)
 
-# CloudAdapter con auth por variables de entorno
-adapter = CloudAdapter(ConfigurationBotFrameworkAuthentication())
+if USE_CLOUD:
+    logger.info("Using CloudAdapter")
+    adapter = CloudAdapter(ConfigurationBotFrameworkAuthentication())
+else:
+    logger.info("Using BotFrameworkAdapter (fallback)")
+    adapter = BotFrameworkAdapter(
+        BotFrameworkAdapterSettings(
+            settings.MICROSOFT_APP_ID,
+            os.getenv("MICROSOFT_APP_PASSWORD", ""),
+        )
+    )
+
 conversation_state = ConversationState(MemoryStorage())
 bot = TeamsGatewayBot()
 
@@ -48,11 +63,10 @@ async def messages(request: Request):
     activity = Activity().deserialize(body)
     auth_header = request.headers.get("Authorization", "")
 
-    # Confiar en el serviceUrl (Teams)
+    # Confiar en el serviceUrl de Teams para los replies
     if getattr(activity, "service_url", None):
         MicrosoftAppCredentials.trust_service_url(activity.service_url)
 
-    # Log de diagnóstico (normaliza recipient 28:)
     rid = getattr(getattr(activity, "recipient", None), "id", None)
     rid_norm = rid.split(":", 1)[-1] if isinstance(rid, str) else rid
     _last_activity_info.update({
@@ -70,6 +84,7 @@ async def messages(request: Request):
     async def aux_logic(turn_context: TurnContext):
         await bot.on_turn(turn_context)
 
+    # Ambos adapters exponen process_activity
     await adapter.process_activity(activity, auth_header, aux_logic)
     return {"ok": True}
 
