@@ -4,8 +4,5 @@ python-dotenv>=1.0
 pydantic>=2.8
 pydantic-settings>=2.5
 httpx>=0.27
-
-Bot Framework SDK para Python
-
 botbuilder-core>=4.15
 botbuilder-schema>=4.15
