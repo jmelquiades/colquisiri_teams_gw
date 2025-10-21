@@ -9,6 +9,7 @@ from botbuilder.core import (
 )
 from botbuilder.schema import Activity
 from .settings import settings
+    # ^^^  asegúrate de que el import apunta a teams_gw.settings
 from .bot import TeamsGatewayBot
 from .health import router as health_router
 
