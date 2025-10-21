@@ -1,40 +1,29 @@
 services:
-
-type: web
-name: teams-gw
-env: python
-plan: starter
-buildCommand: pip install -r requirements.txt
-startCommand: uvicorn src.teams_gw.app:app --host 0.0.0.0 --port $PORT
-envVars:
-
-key: MICROSOFT_APP_ID
-sync: false
-
-key: MICROSOFT_APP_PASSWORD
-sync: false
-
-key: MICROSOFT_APP_TENANT_ID
-sync: false
-
-key: N2SQL_URL
-sync: false
-
-key: N2SQL_QUERY_PATH
-value: /v1/query
-
-key: N2SQL_DATASET
-value: odoo
-
-key: N2SQL_API_KEY
-sync: false
-
-key: APP_TZ
-value: America/Lima
-
-key: N2SQL_TRIGGERS
-value: dt:,consulta ,n2sql:
-
-key: N2SQL_MAX_ROWS
-value: "20"
-healthCheckPath: /__ready
+  - type: web
+    name: teams-gw
+    env: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn src.teams_gw.app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /__ready
+    envVars:
+      - key: MICROSOFT_APP_ID
+        sync: false
+      - key: MICROSOFT_APP_PASSWORD
+        sync: false
+      - key: MICROSOFT_APP_TENANT_ID
+        sync: false
+      - key: N2SQL_URL
+        sync: false
+      - key: N2SQL_QUERY_PATH
+        value: /v1/query
+      - key: N2SQL_DATASET
+        value: odoo
+      - key: N2SQL_API_KEY
+        sync: false
+      - key: APP_TZ
+        value: America/Lima
+      - key: N2SQL_TRIGGERS
+        value: "dt:,consulta ,n2sql:"
+      - key: N2SQL_MAX_ROWS
+        value: "20"
