@@ -24,10 +24,10 @@ logger = logging.getLogger("teams_gw.app")
 
 app = FastAPI(title="teams_gw", version="1.0.0")
 
-# ---- Adapter para SDK 4.14.7 (sin auth_tenant_id) ----
+# Adapter para SDK 4.14.7 (solo app_id y app_password)
 bf_settings = BotFrameworkAdapterSettings(
-    app_id=settings.MICROSOFT_APP_ID,             # puede ser None si quieres modo anónimo
-    app_password=settings.MICROSOFT_APP_PASSWORD, # puede ser None si quieres modo anónimo
+    app_id=settings.MICROSOFT_APP_ID,
+    app_password=settings.MICROSOFT_APP_PASSWORD,
 )
 adapter = BotFrameworkAdapter(bf_settings)
 
@@ -60,8 +60,6 @@ def env_dump() -> Dict[str, Any]:
         "MICROSOFT_APP_ID_set": bool(settings.MICROSOFT_APP_ID),
         "MICROSOFT_APP_PASSWORD_set": bool(settings.MICROSOFT_APP_PASSWORD),
         "MICROSOFT_APP_TENANT_ID_set": settings.MICROSOFT_APP_TENANT_ID is not None,
-        "app_id_alias_used": getattr(settings, "app_id_alias_used", False),
-        "app_secret_alias_used": getattr(settings, "app_secret_alias_used", False),
         "APP_TZ": settings.APP_TZ,
         "N2SQL_URL": settings.N2SQL_URL,
         "N2SQL_QUERY_PATH": settings.N2SQL_QUERY_PATH,
@@ -72,22 +70,24 @@ def env_dump() -> Dict[str, Any]:
 @app.get("/__auth-probe")
 def auth_probe() -> JSONResponse:
     """
-    Prueba directa con MSAL usando el scope de Bot Framework.
-    Confirma credenciales sin pasar por el SDK.
+    Prueba directa con MSAL al scope del Bot Framework.
     """
-    if not getattr(settings, "has_bot_credentials", False):
+    if not settings.MICROSOFT_APP_ID or not settings.MICROSOFT_APP_PASSWORD:
         return JSONResponse(
             {
                 "ok": False,
                 "error": "missing_credentials",
-                "error_description": "No hay MICROSOFT_APP_ID/MICROSOFT_APP_PASSWORD en el entorno (se aceptan alias).",
-                "app_id_alias_used": getattr(settings, "app_id_alias_used", False),
-                "app_secret_alias_used": getattr(settings, "app_secret_alias_used", False),
+                "error_description": "Faltan MICROSOFT_APP_ID o MICROSOFT_APP_PASSWORD en el entorno.",
             },
             status_code=500,
         )
 
-    authority = getattr(settings, "authority", "https://login.microsoftonline.com/organizations")
+    authority = (
+        f"https://login.microsoftonline.com/{settings.MICROSOFT_APP_TENANT_ID}"
+        if settings.MICROSOFT_APP_TENANT_ID
+        else "https://login.microsoftonline.com/organizations"
+    )
+
     cca = msal.ConfidentialClientApplication(
         client_id=settings.MICROSOFT_APP_ID,
         client_credential=settings.MICROSOFT_APP_PASSWORD,
@@ -118,12 +118,19 @@ async def messages(request: Request) -> Response:
     activity: Activity = Activity().deserialize(body)
     auth_header = request.headers.get("Authorization", "")
 
-    # Confiar explícitamente en las URLs de Teams para evitar 401 (host no confiable)
     service_url = getattr(activity, "service_url", None)
-    if service_url:
-        MicrosoftAppCredentials.trust_service_url(service_url)
+
+    # Confiar en los hosts de Teams **antes** de procesar la actividad.
+    # En 4.14.7 la lista interna es privada; usamos is_trusted_service_url para verificar.
+    try:
+        if service_url:
+            MicrosoftAppCredentials.trust_service_url(service_url)
+        # plus hosts comunes
         MicrosoftAppCredentials.trust_service_url("https://smba.trafficmanager.net/")
         MicrosoftAppCredentials.trust_service_url("https://smba.trafficmanager.net/amer/")
+        MicrosoftAppCredentials.trust_service_url("https://api.botframework.com/")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("No se pudo registrar trusted service urls: %s", e)
 
     info = {
         "type": getattr(activity, "type", None),
@@ -137,11 +144,15 @@ async def messages(request: Request) -> Response:
     }
     logger.info("Incoming activity: %s", json.dumps(info, ensure_ascii=False))
 
+    # Log de verificación de confianza (bool) para cada URL relevante
     try:
-        logger.info(
-            "Trusted service URLs: %s",
-            list(getattr(MicrosoftAppCredentials, "trusted_host_names", set())),
-        )
+        checks = {
+            "service_url_trusted": bool(service_url and MicrosoftAppCredentials.is_trusted_service_url(service_url)),
+            "smba_root_trusted": MicrosoftAppCredentials.is_trusted_service_url("https://smba.trafficmanager.net/"),
+            "smba_amer_trusted": MicrosoftAppCredentials.is_trusted_service_url("https://smba.trafficmanager.net/amer/"),
+            "api_bf_trusted": MicrosoftAppCredentials.is_trusted_service_url("https://api.botframework.com/"),
+        }
+        logger.info("Trusted checks: %s", checks)
     except Exception:
         pass
 
@@ -150,11 +161,9 @@ async def messages(request: Request) -> Response:
 
     try:
         await adapter.process_activity(activity, auth_header, aux_logic)
-        # Si no lanza excepción, el SDK ya respondió al Connector correctamente
+        # Si todo va bien, devolvemos 200 al Connector (independiente de si pudimos responder a Teams).
         return Response(status_code=200)
     except Exception as e:  # noqa: BLE001
-        logger.error(
-            "Connector reply failed: %s", e, exc_info=True
-        )
-        # 502 para que el channel sepa que falló aguas abajo
-        return PlainTextResponse("Connector Unauthorized", status_code=502)
+        logger.exception("Connector reply failed")
+        # Devolvemos 502 para que el channel refleje fallo aguas abajo
+        return PlainTextResponse(f"Connector error: {e}", status_code=502)
