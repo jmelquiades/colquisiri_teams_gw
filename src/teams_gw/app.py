@@ -59,12 +59,23 @@ async def messages(request: Request):
     svc = getattr(activity, "service_url", None)
     if svc:
         try:
-            MicrosoftAppCredentials.trust_service_url(svc)
+            from urllib.parse import urlparse
             p = urlparse(svc)
-            base = f"{p.scheme}://{p.netloc}/"
-            MicrosoftAppCredentials.trust_service_url(base)
+            # host raíz
+            host_root = f"{p.scheme}://{p.netloc}/"
+            # base regional (primer segmento del path, p.ej. "amer/")
+            path_parts = [seg for seg in p.path.split("/") if seg]
+            region_base = f"{p.scheme}://{p.netloc}/{path_parts[0]}/" if path_parts else host_root
+
+            from botframework.connector.auth import MicrosoftAppCredentials
+            # Confiar: URL completa, host raíz y base regional
+            for u in {svc, host_root, region_base}:
+                MicrosoftAppCredentials.trust_service_url(u)
+
+            log.info("Trusted service URLs: %s", [svc, host_root, region_base])
         except Exception as e:
-            log.warning("Could not trust serviceUrl: %s (%s)", svc, e)
+            log.warning("Could not trust serviceUrl variants: %s (%s)", svc, e)
+   
 
     async def aux_logic(turn_context: TurnContext):
         await bot.on_turn(turn_context)
@@ -95,3 +106,26 @@ async def messages(request: Request):
 @app.get("/")
 async def root():
     return {"service": app.title, "adapter": ADAPTER_KIND, "ready": True}
+
+@app.get("/__bf-token")
+async def bf_token():
+    from botframework.connector.auth import MicrosoftAppCredentials
+    creds = MicrosoftAppCredentials(settings.MICROSOFT_APP_ID, settings.MICROSOFT_APP_PASSWORD)
+    tok = await creds.get_access_token()
+    # Solo inspección: header.payload (sin verificación)
+    import base64, json
+    def _b64url_decode(seg):
+        seg += '=' * (-len(seg) % 4)
+        return base64.urlsafe_b64decode(seg.encode())
+    parts = tok.split(".")
+    payload = {}
+    try:
+        payload = json.loads(_b64url_decode(parts[1]))
+    except Exception:
+        pass
+    return {
+        "oauth_scope": getattr(creds, "oauth_scope", "<unknown>"),
+        "aud": payload.get("aud"),
+        "appid": payload.get("appid"),
+        "iss": payload.get("iss"),
+    }
