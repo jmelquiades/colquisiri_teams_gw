@@ -5,13 +5,7 @@ services:
     plan: starter
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn src.teams_gw.app:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /__ready
     envVars:
-    
-      - key: MicrosoftAppType
-        value: SingleTenant
-      - key: LOG_LEVEL
-         value: INFO
       - key: MICROSOFT_APP_ID
         sync: false
       - key: MICROSOFT_APP_PASSWORD
@@ -32,3 +26,4 @@ services:
         value: "dt:,consulta ,n2sql:"
       - key: N2SQL_MAX_ROWS
         value: "20"
+    healthCheckPath: /__ready

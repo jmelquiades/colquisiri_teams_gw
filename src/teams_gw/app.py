@@ -1,81 +1,95 @@
 from __future__ import annotations
-import os, logging
-from urllib.parse import urlparse
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+import os
+import logging
+from typing import Optional
 
-from botbuilder.core import (
-    BotFrameworkAdapterSettings,
-    BotFrameworkAdapter,
-    ConversationState,
-    MemoryStorage,
-    TurnContext,
-)
+from fastapi import FastAPI, Request, Header
+from botbuilder.core import BotFrameworkAdapter, BotFrameworkAdapterSettings, TurnContext
 from botbuilder.schema import Activity
 from botframework.connector.auth import MicrosoftAppCredentials
-from botframework.connector import models as connector_models  # <-- para capturar el error
 
 from .settings import settings
 from .bot import TeamsGatewayBot
-from .health import router as health_router
 
-logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 log = logging.getLogger("teams_gw.app")
+logging.basicConfig(level=logging.INFO)
 
 app = FastAPI(title="teams_gw")
-app.include_router(health_router)
 
-adapter = BotFrameworkAdapter(
-    BotFrameworkAdapterSettings(settings.MICROSOFT_APP_ID, settings.MICROSOFT_APP_PASSWORD)
+# Adapter SIN tenant explícito (evita tokens con audiencia equivocada)
+adapter_settings = BotFrameworkAdapterSettings(
+    app_id=settings.MICROSOFT_APP_ID,
+    app_password=settings.MICROSOFT_APP_PASSWORD,
 )
-ADAPTER_KIND = "BotFrameworkAdapter"
-
-conversation_state = ConversationState(MemoryStorage())
+adapter = BotFrameworkAdapter(adapter_settings)
 bot = TeamsGatewayBot()
 
+def _trust_service_urls(service_url: str) -> list[str]:
+    """
+    Confiamos en: 1) URL completa recibida, 2) raíz del host, 3) base regional /amer/
+    """
+    urls = []
+    if service_url:
+        su = service_url.strip()
+        urls.append(su)
+        # host root
+        if su.startswith("https://smba.trafficmanager.net/"):
+            urls.append("https://smba.trafficmanager.net/")
+            # base regional
+            parts = su.split("/")
+            # https: '' smba.trafficmanager.net amer <guid> ''
+            if len(parts) > 4 and parts[3]:
+                urls.append(f"https://smba.trafficmanager.net/{parts[3]}/")
+        for u in urls:
+            try:
+                MicrosoftAppCredentials.trust_service_url(u)
+            except Exception:
+                pass
+    return urls
+
+@app.get("/")
+async def root():
+    return {"service": settings.SERVICE_NAME, "adapter": "BotFrameworkAdapter", "ready": True}
+
+@app.get("/__ready")
+async def ready():
+    return {"ok": True}
+
+@app.get("/__env")
+async def env_probe():
+    return {
+        "MICROSOFT_APP_ID_set": bool(settings.MICROSOFT_APP_ID),
+        "MICROSOFT_APP_PASSWORD_set": bool(settings.MICROSOFT_APP_PASSWORD),
+        "MICROSOFT_APP_TENANT_ID_set": settings.MICROSOFT_APP_TENANT_ID is not None,
+        "N2SQL_URL": settings.N2SQL_URL,
+        "N2SQL_QUERY_PATH": settings.N2SQL_QUERY_PATH,
+        "N2SQL_DATASET": settings.N2SQL_DATASET,
+        "APP_TZ": settings.APP_TZ,
+    }
+
 @app.post("/api/messages")
-async def messages(request: Request):
+async def messages(request: Request, authorization: Optional[str] = Header(None)):
     body = await request.json()
     activity = Activity().deserialize(body)
-    auth_header = request.headers.get("Authorization", "")
 
-    rid = (activity.recipient and activity.recipient.id) or ""
-    rid_norm = rid.split(":", 1)[-1] if rid else ""
+    # Logs útiles
+    rid = (activity.recipient.id or "").replace("28:", "")
     log.info(
-        "Incoming activity: {'type': %s, 'channel_id': %s, 'service_url': %s, "
-        "'conversation_id': %s, 'from_id': %s, 'recipient_id': %s, "
-        "'recipient_id_normalized': %s, 'env_app_id': %s}",
+        "Incoming activity: {'type': %s, 'channel_id': %s, 'service_url': %s, 'conversation_id': %s, 'from_id': %s, 'recipient_id': %s, 'recipient_id_normalized': %s, 'env_app_id': %s}",
         activity.type,
-        activity.channel_id,
+        getattr(activity.channel_data, "channel", "msteams") if hasattr(activity, "channel_data") else "msteams",
         activity.service_url,
-        (activity.conversation and activity.conversation.id),
-        (activity.from_property and activity.from_property.id),
+        activity.conversation.id if activity.conversation else None,
+        activity.from_property.id if activity.from_property else None,
+        activity.recipient.id if activity.recipient else None,
         rid,
-        rid_norm,
         settings.MICROSOFT_APP_ID,
     )
 
-    # Confiamos explíticamente serviceUrl y host base (bien para Teams)
-    svc = getattr(activity, "service_url", None)
-    if svc:
-        try:
-            from urllib.parse import urlparse
-            p = urlparse(svc)
-            # host raíz
-            host_root = f"{p.scheme}://{p.netloc}/"
-            # base regional (primer segmento del path, p.ej. "amer/")
-            path_parts = [seg for seg in p.path.split("/") if seg]
-            region_base = f"{p.scheme}://{p.netloc}/{path_parts[0]}/" if path_parts else host_root
+    trusted = _trust_service_urls(activity.service_url or "")
+    log.info("Trusted service URLs: %s", trusted)
 
-            from botframework.connector.auth import MicrosoftAppCredentials
-            # Confiar: URL completa, host raíz y base regional
-            for u in {svc, host_root, region_base}:
-                MicrosoftAppCredentials.trust_service_url(u)
-
-            log.info("Trusted service URLs: %s", [svc, host_root, region_base])
-        except Exception as e:
-            log.warning("Could not trust serviceUrl variants: %s (%s)", svc, e)
-   
+    auth_header = authorization or ""
 
     async def aux_logic(turn_context: TurnContext):
         await bot.on_turn(turn_context)
@@ -83,49 +97,12 @@ async def messages(request: Request):
     try:
         await adapter.process_activity(activity, auth_header, aux_logic)
         return {"ok": True}
-    except connector_models.ErrorResponseException as e:
-        # Esto nos da el cuerpo que envía el servicio (la clave para saber por qué 401)
-        status = getattr(e.response, "status", None)
-        reason = getattr(e.response, "reason", None)
-        try:
-            body_text = await e.response.text()  # aiohttp response
-        except Exception:
-            body_text = "<no-body>"
-        log.error(
-            "Connector reply failed: status=%s reason=%s url=%s convo=%s activityId=%s body=%s",
-            status, reason, activity.service_url,
-            (activity.conversation and activity.conversation.id),
-            getattr(activity, "id", None),
-            body_text,
-        )
-        return JSONResponse(status_code=502, content={"ok": False, "error": "connector_unauthorized"})
     except Exception as e:
-        log.exception("Unexpected error replying to Teams: %s", e)
-        return JSONResponse(status_code=500, content={"ok": False, "error": "unexpected"})
-        
-@app.get("/")
-async def root():
-    return {"service": app.title, "adapter": ADAPTER_KIND, "ready": True}
-
-@app.get("/__bf-token")
-async def bf_token():
-    from botframework.connector.auth import MicrosoftAppCredentials
-    creds = MicrosoftAppCredentials(settings.MICROSOFT_APP_ID, settings.MICROSOFT_APP_PASSWORD)
-    tok = await creds.get_access_token()
-    # Solo inspección: header.payload (sin verificación)
-    import base64, json
-    def _b64url_decode(seg):
-        seg += '=' * (-len(seg) % 4)
-        return base64.urlsafe_b64decode(seg.encode())
-    parts = tok.split(".")
-    payload = {}
-    try:
-        payload = json.loads(_b64url_decode(parts[1]))
-    except Exception:
-        pass
-    return {
-        "oauth_scope": getattr(creds, "oauth_scope", "<unknown>"),
-        "aud": payload.get("aud"),
-        "appid": payload.get("appid"),
-        "iss": payload.get("iss"),
-    }
+        # Cuando el Connector responde 401, el SDK levanta una excepción genérica sin body
+        log.error(
+            "Connector reply failed: status=None reason=Unauthorized url=%s convo=%s activityId=%s body=<no-body>",
+            activity.service_url,
+            activity.conversation.id if activity.conversation else None,
+            activity.id,
+        )
+        raise

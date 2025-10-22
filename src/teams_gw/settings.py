@@ -1,36 +1,28 @@
 from __future__ import annotations
-import os
-from typing import List, Optional
-from pydantic import Field, AliasChoices
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings
+from pydantic import Field
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
+    SERVICE_NAME: str = "teams_gw"
 
-    MICROSOFT_APP_ID: str = Field(
-        validation_alias=AliasChoices("MICROSOFT_APP_ID", "MicrosoftAppId")
-    )
-    MICROSOFT_APP_PASSWORD: str = Field(
-        validation_alias=AliasChoices("MICROSOFT_APP_PASSWORD", "MicrosoftAppPassword")
-    )
-    MICROSOFT_APP_TENANT_ID: Optional[str] = Field(
-        default=None,
-        validation_alias=AliasChoices("MICROSOFT_APP_TENANT_ID", "MicrosoftAppTenantId"),
-    )
+    # Credenciales de Azure AD para el Bot Framework Connector
+    MICROSOFT_APP_ID: str = Field(..., description="Azure AD App (client) ID")
+    MICROSOFT_APP_PASSWORD: str = Field(..., description="Client secret")
+    # Mantener opcional: no lo usamos en el adapter para evitar 401 con el Connector
+    MICROSOFT_APP_TENANT_ID: str | None = None
 
-    N2SQL_URL: str
+    # N2SQL (opcionales)
+    N2SQL_URL: str | None = None
     N2SQL_QUERY_PATH: str = "/v1/query"
-    N2SQL_API_KEY: Optional[str] = None
-    N2SQL_TIMEOUT_S: int = 30
-
-    APP_TZ: str = "America/Lima"
-    N2SQL_TRIGGERS: str = "dt:,consulta ,n2sql:"
+    N2SQL_DATASET: str | None = None
+    N2SQL_API_KEY: str | None = None
     N2SQL_MAX_ROWS: int = 20
-    PORT: int = int(os.getenv("PORT", "8000"))
-    ENV: str = os.getenv("ENV", "prod")
+    N2SQL_TRIGGERS: str = "dt:,consulta ,n2sql:"
 
-    @property
-    def triggers(self) -> List[str]:
-        return [t.strip() for t in self.N2SQL_TRIGGERS.split(",") if t.strip()]
+    APP_TZ: str = "UTC"
+
+    class Config:
+        env_file = ".env"
+        extra = "ignore"
 
 settings = Settings()
