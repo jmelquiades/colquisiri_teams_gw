@@ -1,11 +1,19 @@
 from __future__ import annotations
 import os
 import logging
-import msal
+from urllib.parse import urlparse
+
 from fastapi import FastAPI, Request
+from botbuilder.core import (
+    BotFrameworkAdapterSettings,
+    BotFrameworkAdapter,
+    ConversationState,
+    MemoryStorage,
+    TurnContext,
+)
 from botbuilder.schema import Activity
-from botbuilder.core import ConversationState, MemoryStorage, TurnContext
 from botframework.connector.auth import MicrosoftAppCredentials
+
 from .settings import settings
 from .bot import TeamsGatewayBot
 from .health import router as health_router
@@ -16,34 +24,11 @@ log = logging.getLogger("teams_gw.app")
 app = FastAPI(title="teams_gw")
 app.include_router(health_router)
 
-# --- Preferir CloudAdapter; si no está, fallback a BotFrameworkAdapter ---
-USE_CLOUD = True
-ADAPTER_KIND = "CloudAdapter"
-try:
-    try:
-        from botbuilder.core import CloudAdapter  # 4.14.x
-    except Exception:
-        from botbuilder.core.cloud_adapter import CloudAdapter  # otras builds
-    from botframework.connector.auth import ConfigurationBotFrameworkAuthentication
-except Exception:
-    USE_CLOUD = False
-    ADAPTER_KIND = "BotFrameworkAdapter"
-    from botbuilder.core import BotFrameworkAdapter, BotFrameworkAdapterSettings  # type: ignore
-
-# Respetamos tus mismas envs (multitenant) sin renombrar nada
-os.environ["MicrosoftAppId"] = settings.MICROSOFT_APP_ID
-os.environ["MicrosoftAppPassword"] = settings.MICROSOFT_APP_PASSWORD
-os.environ["MicrosoftAppType"] = os.getenv("MicrosoftAppType", "MultiTenant")
-if settings.MICROSOFT_APP_TENANT_ID:
-    os.environ["MicrosoftAppTenantId"] = settings.MICROSOFT_APP_TENANT_ID
-
-if USE_CLOUD:
-    auth = ConfigurationBotFrameworkAuthentication()  # lee envs anteriores
-    adapter = CloudAdapter(auth)
-else:
-    adapter = BotFrameworkAdapter(
-        BotFrameworkAdapterSettings(settings.MICROSOFT_APP_ID, settings.MICROSOFT_APP_PASSWORD)
-    )
+# Mantener el adapter clásico (no cambiamos env vars)
+adapter = BotFrameworkAdapter(
+    BotFrameworkAdapterSettings(settings.MICROSOFT_APP_ID, settings.MICROSOFT_APP_PASSWORD)
+)
+ADAPTER_KIND = "BotFrameworkAdapter"
 
 conversation_state = ConversationState(MemoryStorage())
 bot = TeamsGatewayBot()
@@ -54,7 +39,7 @@ async def messages(request: Request):
     activity = Activity().deserialize(body)
     auth_header = request.headers.get("Authorization", "")
 
-    # Log mínimo de diagnóstico
+    # Log de diagnóstico (no bloquea)
     rid = (activity.recipient and activity.recipient.id) or ""
     rid_norm = rid.split(":", 1)[-1] if rid else ""
     log.info(
@@ -71,9 +56,17 @@ async def messages(request: Request):
         settings.MICROSOFT_APP_ID,
     )
 
-    # 🔐 Confiar el serviceUrl antes de responder (evita 401 en Teams)
-    if getattr(activity, "service_url", None):
-        MicrosoftAppCredentials.trust_service_url(activity.service_url)
+    # 🔐 MUY IMPORTANTE: confiar el serviceUrl y el host base antes de responder
+    svc = getattr(activity, "service_url", None)
+    if svc:
+        try:
+            MicrosoftAppCredentials.trust_service_url(svc)
+            p = urlparse(svc)
+            base = f"{p.scheme}://{p.netloc}/"
+            MicrosoftAppCredentials.trust_service_url(base)
+            log.debug("Trusted serviceUrl: %s and base: %s", svc, base)
+        except Exception as e:
+            log.warning("Could not trust serviceUrl: %s (%s)", svc, e)
 
     async def aux_logic(turn_context: TurnContext):
         await bot.on_turn(turn_context)
@@ -84,19 +77,3 @@ async def messages(request: Request):
 @app.get("/")
 async def root():
     return {"service": app.title, "adapter": ADAPTER_KIND, "ready": True}
-
-# Probe de token contra Bot Framework (opcional)
-@app.get("/__auth-probe")
-async def auth_probe():
-    app_msal = msal.ConfidentialClientApplication(
-        client_id=settings.MICROSOFT_APP_ID,
-        client_credential=settings.MICROSOFT_APP_PASSWORD,
-        authority="https://login.microsoftonline.com/organizations",
-    )
-    tok = app_msal.acquire_token_for_client(scopes=["https://api.botframework.com/.default"])
-    return {
-        "ok": bool(tok.get("access_token")),
-        "expires_in": tok.get("expires_in"),
-        "error": tok.get("error"),
-        "error_description": tok.get("error_description"),
-    }
