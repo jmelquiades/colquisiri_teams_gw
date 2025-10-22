@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 import os
 import logging
 import msal
@@ -7,7 +6,6 @@ from fastapi import FastAPI, Request
 from botbuilder.schema import Activity
 from botbuilder.core import ConversationState, MemoryStorage, TurnContext
 from botframework.connector.auth import MicrosoftAppCredentials
-
 from .settings import settings
 from .bot import TeamsGatewayBot
 from .health import router as health_router
@@ -18,21 +16,21 @@ log = logging.getLogger("teams_gw.app")
 app = FastAPI(title="teams_gw")
 app.include_router(health_router)
 
-# --- Preferir CloudAdapter; si no está, caer al clásico ---
+# --- Preferir CloudAdapter; si no está, fallback a BotFrameworkAdapter ---
 USE_CLOUD = True
-AdapterKind = "CloudAdapter"
+ADAPTER_KIND = "CloudAdapter"
 try:
     try:
         from botbuilder.core import CloudAdapter  # 4.14.x
     except Exception:
-        from botbuilder.core.cloud_adapter import CloudAdapter  # algunas builds
+        from botbuilder.core.cloud_adapter import CloudAdapter  # otras builds
     from botframework.connector.auth import ConfigurationBotFrameworkAuthentication
 except Exception:
     USE_CLOUD = False
-    AdapterKind = "BotFrameworkAdapter"
+    ADAPTER_KIND = "BotFrameworkAdapter"
     from botbuilder.core import BotFrameworkAdapter, BotFrameworkAdapterSettings  # type: ignore
 
-# Respetar tus mismas variables (multitenant) sin renombrar nada
+# Respetamos tus mismas envs (multitenant) sin renombrar nada
 os.environ["MicrosoftAppId"] = settings.MICROSOFT_APP_ID
 os.environ["MicrosoftAppPassword"] = settings.MICROSOFT_APP_PASSWORD
 os.environ["MicrosoftAppType"] = os.getenv("MicrosoftAppType", "MultiTenant")
@@ -40,7 +38,7 @@ if settings.MICROSOFT_APP_TENANT_ID:
     os.environ["MicrosoftAppTenantId"] = settings.MICROSOFT_APP_TENANT_ID
 
 if USE_CLOUD:
-    auth = ConfigurationBotFrameworkAuthentication()  # lee envs arriba
+    auth = ConfigurationBotFrameworkAuthentication()  # lee envs anteriores
     adapter = CloudAdapter(auth)
 else:
     adapter = BotFrameworkAdapter(
@@ -56,7 +54,7 @@ async def messages(request: Request):
     activity = Activity().deserialize(body)
     auth_header = request.headers.get("Authorization", "")
 
-    # Diagnóstico mínimo
+    # Log mínimo de diagnóstico
     rid = (activity.recipient and activity.recipient.id) or ""
     rid_norm = rid.split(":", 1)[-1] if rid else ""
     log.info(
@@ -73,7 +71,7 @@ async def messages(request: Request):
         settings.MICROSOFT_APP_ID,
     )
 
-    # 🔐 MUY IMPORTANTE: confiar el serviceUrl ANTES de responder
+    # 🔐 Confiar el serviceUrl antes de responder (evita 401 en Teams)
     if getattr(activity, "service_url", None):
         MicrosoftAppCredentials.trust_service_url(activity.service_url)
 
@@ -85,9 +83,9 @@ async def messages(request: Request):
 
 @app.get("/")
 async def root():
-    return {"service": app.title, "adapter": AdapterKind, "ready": True}
+    return {"service": app.title, "adapter": ADAPTER_KIND, "ready": True}
 
-# Probas token AAD contra Bot Framework (no cambia tus envs)
+# Probe de token contra Bot Framework (opcional)
 @app.get("/__auth-probe")
 async def auth_probe():
     app_msal = msal.ConfidentialClientApplication(
