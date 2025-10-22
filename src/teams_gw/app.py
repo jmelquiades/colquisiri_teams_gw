@@ -24,11 +24,10 @@ logger = logging.getLogger("teams_gw.app")
 
 app = FastAPI(title="teams_gw", version="1.0.0")
 
-# === Adapter: tolerante a credenciales faltantes ===
+# ---- Adapter para SDK 4.14.7 (sin auth_tenant_id) ----
 bf_settings = BotFrameworkAdapterSettings(
-    app_id=settings.MICROSOFT_APP_ID,                 # puede ser None
-    app_password=settings.MICROSOFT_APP_PASSWORD,     # puede ser None
-    auth_tenant_id=settings.MICROSOFT_APP_TENANT_ID,  # multitenant si None -> organizations
+    app_id=settings.MICROSOFT_APP_ID,             # puede ser None si quieres modo anónimo
+    app_password=settings.MICROSOFT_APP_PASSWORD, # puede ser None si quieres modo anónimo
 )
 adapter = BotFrameworkAdapter(bf_settings)
 
@@ -61,8 +60,8 @@ def env_dump() -> Dict[str, Any]:
         "MICROSOFT_APP_ID_set": bool(settings.MICROSOFT_APP_ID),
         "MICROSOFT_APP_PASSWORD_set": bool(settings.MICROSOFT_APP_PASSWORD),
         "MICROSOFT_APP_TENANT_ID_set": settings.MICROSOFT_APP_TENANT_ID is not None,
-        "app_id_alias_used": settings.app_id_alias_used,
-        "app_secret_alias_used": settings.app_secret_alias_used,
+        "app_id_alias_used": getattr(settings, "app_id_alias_used", False),
+        "app_secret_alias_used": getattr(settings, "app_secret_alias_used", False),
         "APP_TZ": settings.APP_TZ,
         "N2SQL_URL": settings.N2SQL_URL,
         "N2SQL_QUERY_PATH": settings.N2SQL_QUERY_PATH,
@@ -74,24 +73,25 @@ def env_dump() -> Dict[str, Any]:
 def auth_probe() -> JSONResponse:
     """
     Prueba directa con MSAL usando el scope de Bot Framework.
-    Útil para confirmar que las credenciales funcionan sin pasar por el SDK.
+    Confirma credenciales sin pasar por el SDK.
     """
-    if not settings.has_bot_credentials:
+    if not getattr(settings, "has_bot_credentials", False):
         return JSONResponse(
             {
                 "ok": False,
                 "error": "missing_credentials",
                 "error_description": "No hay MICROSOFT_APP_ID/MICROSOFT_APP_PASSWORD en el entorno (se aceptan alias).",
-                "app_id_alias_used": settings.app_id_alias_used,
-                "app_secret_alias_used": settings.app_secret_alias_used,
+                "app_id_alias_used": getattr(settings, "app_id_alias_used", False),
+                "app_secret_alias_used": getattr(settings, "app_secret_alias_used", False),
             },
             status_code=500,
         )
 
+    authority = getattr(settings, "authority", "https://login.microsoftonline.com/organizations")
     cca = msal.ConfidentialClientApplication(
         client_id=settings.MICROSOFT_APP_ID,
         client_credential=settings.MICROSOFT_APP_PASSWORD,
-        authority=settings.authority,  # organizations o tenant específico
+        authority=authority,
     )
     scopes = ["https://api.botframework.com/.default"]
     result = cca.acquire_token_for_client(scopes=scopes)
@@ -118,7 +118,7 @@ async def messages(request: Request) -> Response:
     activity: Activity = Activity().deserialize(body)
     auth_header = request.headers.get("Authorization", "")
 
-    # Confiar en las URLs de Teams para evitar errores 401 por host no confiable
+    # Confiar explícitamente en las URLs de Teams para evitar 401 (host no confiable)
     service_url = getattr(activity, "service_url", None)
     if service_url:
         MicrosoftAppCredentials.trust_service_url(service_url)
@@ -156,5 +156,5 @@ async def messages(request: Request) -> Response:
         logger.error(
             "Connector reply failed: %s", e, exc_info=True
         )
-        # Responder 502 para que el channel sepa que falló aguas abajo
+        # 502 para que el channel sepa que falló aguas abajo
         return PlainTextResponse("Connector Unauthorized", status_code=502)
