@@ -1,26 +1,59 @@
-from __future__ import annotations
-
-from pydantic_settings import BaseSettings
+from typing import Optional
+from pydantic import Field, AliasChoices, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    # Credenciales Bot Framework (no cambiamos nombres)
-    MICROSOFT_APP_ID: str
-    MICROSOFT_APP_PASSWORD: str
-    # Opcional: si no lo pones, queda multitenant
-    MICROSOFT_APP_TENANT_ID: str | None = None
+    """
+    Lee credenciales desde variables de entorno o .env.
+    Acepta alias comunes para evitar “no lo encuentra” si el host no usa el nombre exacto.
+    """
 
-    # Otros (los dejo opcionales para no romper tu carga)
-    N2SQL_URL: str | None = None
-    N2SQL_QUERY_PATH: str | None = None
-    N2SQL_DATASET: str | None = None
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        extra="ignore",
+    )
 
-    APP_TZ: str = "America/Lima"
+    # Acepta MICROSOFT_APP_ID / MicrosoftAppId / MICROSOFTAPPID
+    MICROSOFT_APP_ID: str = Field(
+        ...,
+        validation_alias=AliasChoices(
+            "MICROSOFT_APP_ID",
+            "MicrosoftAppId",
+            "MICROSOFTAPPID",
+        ),
+    )
 
-    model_config = {
-        "env_file": ".env",
-        "extra": "ignore",
-    }
+    # Acepta MICROSOFT_APP_PASSWORD / MicrosoftAppPassword / MICROSOFTAPPPASSWORD
+    MICROSOFT_APP_PASSWORD: str = Field(
+        ...,
+        validation_alias=AliasChoices(
+            "MICROSOFT_APP_PASSWORD",
+            "MicrosoftAppPassword",
+            "MICROSOFTAPPPASSWORD",
+        ),
+    )
+
+    # Opcionales (gov/sovereign o pruebas)
+    BOT_OPENID_METADATA: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("BOT_OPENID_METADATA", "BotOpenIdMetadata"),
+    )
+    CHANNEL_SERVICE: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("CHANNEL_SERVICE", "ChannelService"),
+    )
+
+    # Otros settings de tu app (ejemplo)
+    APP_TZ: Optional[str] = Field(default="UTC")
+
+    @field_validator("MICROSOFT_APP_ID", "MICROSOFT_APP_PASSWORD", mode="before")
+    @classmethod
+    def _strip_spaces(cls, v):
+        # Recorta espacios si por error se pegaron con espacios al inicio/fin
+        if isinstance(v, str):
+            return v.strip()
+        return v
 
 
 settings = Settings()
