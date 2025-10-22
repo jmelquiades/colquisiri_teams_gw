@@ -11,3 +11,5 @@ msal>=1.28
 botbuilder-core==4.14.7
 botbuilder-schema==4.14.7
 botframework-connector==4.14.7
+pyjwt>=2.9
+
