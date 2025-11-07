@@ -96,11 +96,11 @@ async def messages(request: Request):
     except connector_models.ErrorResponseException as e:
         status, reason, body_text = await _extract_error_details(e)
         log.error(
-            "Connector reply failed: status=%s reason=%s url=%s convo=%s activityId=%s body=%s",
+            "Connector reply failed: status=%s reason=%s url=%s convo=%s activityId=%s body=%s raw=%r inner=%r",
             status, reason, activity.service_url,
             (activity.conversation and activity.conversation.id),
             getattr(activity, "id", None),
-            body_text,
+            body_text, e, getattr(e, "inner_exception", None),
         )
         return JSONResponse(status_code=502, content={"ok": False, "error": "connector_unauthorized"})
     except Exception as e:
