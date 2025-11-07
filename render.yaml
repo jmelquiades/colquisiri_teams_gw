@@ -18,6 +18,8 @@ services:
         sync: false
       - key: MICROSOFT_APP_TENANT_ID
         sync: false
+      - key: MICROSOFT_APP_OAUTH_SCOPE
+        sync: false
       - key: N2SQL_URL
         sync: false
       - key: N2SQL_QUERY_PATH

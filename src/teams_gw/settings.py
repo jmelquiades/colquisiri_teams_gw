@@ -17,7 +17,15 @@ class Settings(BaseSettings):
         default=None,
         validation_alias=AliasChoices("MICROSOFT_APP_TENANT_ID", "MicrosoftAppTenantId"),
     )
-
+    MICROSOFT_APP_OAUTH_SCOPE: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "MICROSOFT_APP_OAUTH_SCOPE",
+            "MicrosoftAppOAuthScope",
+            "MicrosoftAppScope",
+        ),
+    )
+    
     N2SQL_URL: str
     N2SQL_QUERY_PATH: str = "/v1/query"
     N2SQL_API_KEY: Optional[str] = None

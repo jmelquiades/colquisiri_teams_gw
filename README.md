@@ -55,7 +55,7 @@ https://<tu-servicio>.onrender.com/api/messages
 Valida GET /__ready y prueba en Teams.
 
 Variables principales
-Bot: MICROSOFT_APP_ID, MICROSOFT_APP_PASSWORD, MICROSOFT_APP_TENANT_ID?
+Bot: MICROSOFT_APP_ID, MICROSOFT_APP_PASSWORD, MICROSOFT_APP_TENANT_ID?, MICROSOFT_APP_OAUTH_SCOPE?
 
 N2SQL: N2SQL_URL, N2SQL_QUERY_PATH(=/v1/query), N2SQL_DATASET(=odoo), N2SQL_API_KEY?
 

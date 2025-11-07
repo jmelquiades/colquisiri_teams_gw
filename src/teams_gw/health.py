@@ -20,6 +20,7 @@ async def env_echo():
         "MICROSOFT_APP_ID_set": bool(settings.MICROSOFT_APP_ID),
         "MICROSOFT_APP_PASSWORD_set": bool(bool(os.getenv("MICROSOFT_APP_PASSWORD"))),
         "MICROSOFT_APP_TENANT_ID_set": bool(settings.MICROSOFT_APP_TENANT_ID),
+        "MICROSOFT_APP_OAUTH_SCOPE": settings.MICROSOFT_APP_OAUTH_SCOPE,
         "N2SQL_URL": settings.N2SQL_URL,
         "N2SQL_QUERY_PATH": settings.N2SQL_QUERY_PATH,
         "N2SQL_DATASET": getattr(settings, "N2SQL_DATASET", None),

@@ -1,5 +1,5 @@
-from __future__ import annotations
-import os, logging
+
+
 from urllib.parse import urlparse
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -25,9 +25,13 @@ log = logging.getLogger("teams_gw.app")
 app = FastAPI(title="teams_gw")
 app.include_router(health_router)
 
-adapter = BotFrameworkAdapter(
-    BotFrameworkAdapterSettings(settings.MICROSOFT_APP_ID, settings.MICROSOFT_APP_PASSWORD)
+adapter_settings = BotFrameworkAdapterSettings(
+    settings.MICROSOFT_APP_ID,
+    settings.MICROSOFT_APP_PASSWORD,
+    settings.MICROSOFT_APP_TENANT_ID,
+    settings.MICROSOFT_APP_OAUTH_SCOPE,
 )
+adapter = BotFrameworkAdapter(adapter_settings)
 ADAPTER_KIND = "BotFrameworkAdapter"
 
 conversation_state = ConversationState(MemoryStorage())
@@ -110,7 +114,12 @@ async def root():
 @app.get("/__bf-token")
 async def bf_token():
     from botframework.connector.auth import MicrosoftAppCredentials
-    creds = MicrosoftAppCredentials(settings.MICROSOFT_APP_ID, settings.MICROSOFT_APP_PASSWORD)
+    creds = MicrosoftAppCredentials(
+        settings.MICROSOFT_APP_ID,
+        settings.MICROSOFT_APP_PASSWORD,
+        settings.MICROSOFT_APP_TENANT_ID,
+        settings.MICROSOFT_APP_OAUTH_SCOPE,
+    )
     tok = await creds.get_access_token()
     # Solo inspección: header.payload (sin verificación)
     import base64, json
