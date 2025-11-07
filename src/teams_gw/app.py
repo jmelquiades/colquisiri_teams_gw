@@ -75,11 +75,15 @@ async def messages(request: Request):
             path_parts = [seg for seg in p.path.split("/") if seg]
             region_base = f"{p.scheme}://{p.netloc}/{path_parts[0]}/" if path_parts else host_root
 
-            # Confiar: URL completa, host raíz y base regional
-            for u in {svc, host_root, region_base}:
-                MicrosoftAppCredentials.trust_service_url(u)
+            # Confiar: URL completa, host raíz y base regional (ambos con/sin "/")
+            variants = {svc, host_root, region_base}
+            variants |= {u.rstrip("/") for u in variants if u.endswith("/")}
 
-            log.info("Trusted service URLs: %s", [svc, host_root, region_base])
+            for u in variants:
+                if u:
+                    MicrosoftAppCredentials.trust_service_url(u)
+
+            log.info("Trusted service URLs: %s", sorted(variants))
         except Exception as e:
             log.warning("Could not trust serviceUrl variants: %s (%s)", svc, e)
    
