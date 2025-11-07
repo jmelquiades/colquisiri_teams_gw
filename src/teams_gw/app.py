@@ -30,14 +30,19 @@ log = logging.getLogger("teams_gw.app")
 app = FastAPI(title="teams_gw")
 app.include_router(health_router)
 
-adapter_settings = BotFrameworkAdapterSettings(
-    settings.MICROSOFT_APP_ID,
-    settings.MICROSOFT_APP_PASSWORD,
-    settings.MICROSOFT_APP_TENANT_ID,
-    settings.MICROSOFT_APP_OAUTH_SCOPE,
-)
-adapter = BotFrameworkAdapter(adapter_settings)
+from botbuilder.core.bot_framework_authentication import ConfigurationBotFrameworkAuthentication
+
+auth_settings = {
+    "MicrosoftAppId": settings.MICROSOFT_APP_ID,
+    "MicrosoftAppPassword": settings.MICROSOFT_APP_PASSWORD,
+    "MicrosoftAppTenantId": settings.MICROSOFT_APP_TENANT_ID,
+    "MicrosoftAppOAuthScope": settings.MICROSOFT_APP_OAUTH_SCOPE,
+    "MicrosoftAppType": os.getenv("MicrosoftAppType", "SingleTenant"),
+}
+bot_auth = ConfigurationBotFrameworkAuthentication(auth_settings)
+adapter = BotFrameworkAdapter(bot_framework_authentication=bot_auth)
 ADAPTER_KIND = "BotFrameworkAdapter"
+
 
 conversation_state = ConversationState(MemoryStorage())
 bot = TeamsGatewayBot()
