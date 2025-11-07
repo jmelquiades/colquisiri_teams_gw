@@ -25,7 +25,6 @@ class Settings(BaseSettings):
             "MicrosoftAppScope",
         ),
     )
-    
     N2SQL_URL: str
     N2SQL_QUERY_PATH: str = "/v1/query"
     N2SQL_API_KEY: Optional[str] = None

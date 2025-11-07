@@ -1,23 +1,28 @@
+from __future__ import annotations
 
-
+import inspect
+import logging
+import os
+from typing import Any
 from urllib.parse import urlparse
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from botbuilder.core import (
-    BotFrameworkAdapterSettings,
     BotFrameworkAdapter,
+    BotFrameworkAdapterSettings,
     ConversationState,
     MemoryStorage,
     TurnContext,
 )
 from botbuilder.schema import Activity
-from botframework.connector.auth import MicrosoftAppCredentials
 from botframework.connector import models as connector_models  # <-- para capturar el error
+from botframework.connector.auth import MicrosoftAppCredentials
 
-from .settings import settings
 from .bot import TeamsGatewayBot
 from .health import router as health_router
+from .settings import settings
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 log = logging.getLogger("teams_gw.app")
@@ -63,7 +68,6 @@ async def messages(request: Request):
     svc = getattr(activity, "service_url", None)
     if svc:
         try:
-            from urllib.parse import urlparse
             p = urlparse(svc)
             # host raíz
             host_root = f"{p.scheme}://{p.netloc}/"
@@ -71,7 +75,6 @@ async def messages(request: Request):
             path_parts = [seg for seg in p.path.split("/") if seg]
             region_base = f"{p.scheme}://{p.netloc}/{path_parts[0]}/" if path_parts else host_root
 
-            from botframework.connector.auth import MicrosoftAppCredentials
             # Confiar: URL completa, host raíz y base regional
             for u in {svc, host_root, region_base}:
                 MicrosoftAppCredentials.trust_service_url(u)
@@ -88,13 +91,7 @@ async def messages(request: Request):
         await adapter.process_activity(activity, auth_header, aux_logic)
         return {"ok": True}
     except connector_models.ErrorResponseException as e:
-        # Esto nos da el cuerpo que envía el servicio (la clave para saber por qué 401)
-        status = getattr(e.response, "status", None)
-        reason = getattr(e.response, "reason", None)
-        try:
-            body_text = await e.response.text()  # aiohttp response
-        except Exception:
-            body_text = "<no-body>"
+        status, reason, body_text = await _extract_error_details(e)
         log.error(
             "Connector reply failed: status=%s reason=%s url=%s convo=%s activityId=%s body=%s",
             status, reason, activity.service_url,
@@ -106,6 +103,54 @@ async def messages(request: Request):
     except Exception as e:
         log.exception("Unexpected error replying to Teams: %s", e)
         return JSONResponse(status_code=500, content={"ok": False, "error": "unexpected"})
+
+
+async def _extract_error_details(error: connector_models.ErrorResponseException) -> tuple[Any, Any, str]:
+    """Try to pull status/headers/body information from BotFramework error responses."""
+
+    def _maybe_decode(value: Any) -> str:
+        if value is None:
+            return "<no-body>"
+        if isinstance(value, bytes):
+            return value.decode("utf-8", "replace")
+        return str(value)
+
+    status = None
+    reason = None
+    body_text = "<no-body>"
+
+    response = getattr(error, "response", None)
+    candidates = [response] if response else []
+    http_response = getattr(response, "http_response", None) if response else None
+    if http_response:
+        candidates.append(http_response)
+
+    for candidate in filter(None, candidates):
+        status = status or getattr(candidate, "status", None) or getattr(candidate, "status_code", None)
+        reason = reason or getattr(candidate, "reason", None)
+
+        for accessor_name in ("text", "read"):
+            accessor = getattr(candidate, accessor_name, None)
+            if not callable(accessor):
+                continue
+            try:
+                payload = accessor()
+                if inspect.isawaitable(payload):
+                    payload = await payload
+                if payload is not None:
+                    body_text = _maybe_decode(payload)
+                    break
+            except Exception:
+                continue
+        else:
+            raw_body = getattr(candidate, "body", None)
+            if raw_body is not None:
+                body_text = _maybe_decode(raw_body)
+
+        if body_text != "<no-body>":
+            break
+
+    return status, reason, body_text
         
 @app.get("/")
 async def root():
