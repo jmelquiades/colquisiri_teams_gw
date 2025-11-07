@@ -1,37 +1,30 @@
 from __future__ import annotations
-import os
+from typing import Any, Dict, Optional
 import httpx
 from .settings import settings
 
 class N2SQLClient:
     def __init__(self) -> None:
-        self.base = (settings.N2SQL_URL or "").rstrip("/")
+        self.base = settings.N2SQL_URL.rstrip("/")
         self.path = settings.N2SQL_QUERY_PATH
-        self.dataset = settings.N2SQL_DATASET
-        self.api_key = settings.N2SQL_API_KEY
-        self.max_rows = settings.N2SQL_MAX_ROWS
+        self.headers = {"Content-Type": "application/json"}
+        if settings.N2SQL_API_KEY:
+            self.headers["Authorization"] = f"Bearer {settings.N2SQL_API_KEY}"
+        self.timeout = settings.N2SQL_TIMEOUT_S
 
-    async def query(self, question: str) -> dict:
-        if not self.base:
-            return {"ok": False, "error": "N2SQL_URL not configured."}
-
-        url = f"{self.base}{self.path}"
-        payload = {
-            "dataset": self.dataset,
-            "question": question,
-            "limit": self.max_rows,
+    def build_payload(self, question: str, dataset: Optional[str] = None) -> Dict[str, Any]:
+        # Contrato de colquisiri_n2sql_service: dataset/intent/params
+        return {
+            "dataset": dataset or getattr(settings, "N2SQL_DATASET", "odoo"),
+            "intent": question,
+            "params": {},
         }
-        headers = {"Content-Type": "application/json"}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
 
-        async with httpx.AsyncClient(timeout=45) as client:
-            r = await client.post(url, json=payload, headers=headers)
-            ok = 200 <= r.status_code < 300
-            return {
-                "ok": ok,
-                "status": r.status_code,
-                "data": (r.json() if ok else {"text": r.text}),
-            }
+    async def ask(self, question: str, dataset: Optional[str] = None) -> Dict[str, Any]:
+        url = f"{self.base}{self.path}"
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            resp = await client.post(url, json=self.build_payload(question, dataset), headers=self.headers)
+            resp.raise_for_status()
+            return resp.json()
 
 client = N2SQLClient()

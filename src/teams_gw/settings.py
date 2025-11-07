@@ -1,59 +1,36 @@
-from typing import Optional
-from pydantic import Field, AliasChoices, field_validator
+from __future__ import annotations
+import os
+from typing import List, Optional
+from pydantic import Field, AliasChoices
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 class Settings(BaseSettings):
-    """
-    Lee credenciales desde variables de entorno o .env.
-    Acepta alias comunes para evitar “no lo encuentra” si el host no usa el nombre exacto.
-    """
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
 
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        extra="ignore",
-    )
-
-    # Acepta MICROSOFT_APP_ID / MicrosoftAppId / MICROSOFTAPPID
     MICROSOFT_APP_ID: str = Field(
-        ...,
-        validation_alias=AliasChoices(
-            "MICROSOFT_APP_ID",
-            "MicrosoftAppId",
-            "MICROSOFTAPPID",
-        ),
+        validation_alias=AliasChoices("MICROSOFT_APP_ID", "MicrosoftAppId")
     )
-
-    # Acepta MICROSOFT_APP_PASSWORD / MicrosoftAppPassword / MICROSOFTAPPPASSWORD
     MICROSOFT_APP_PASSWORD: str = Field(
-        ...,
-        validation_alias=AliasChoices(
-            "MICROSOFT_APP_PASSWORD",
-            "MicrosoftAppPassword",
-            "MICROSOFTAPPPASSWORD",
-        ),
+        validation_alias=AliasChoices("MICROSOFT_APP_PASSWORD", "MicrosoftAppPassword")
     )
-
-    # Opcionales (gov/sovereign o pruebas)
-    BOT_OPENID_METADATA: Optional[str] = Field(
+    MICROSOFT_APP_TENANT_ID: Optional[str] = Field(
         default=None,
-        validation_alias=AliasChoices("BOT_OPENID_METADATA", "BotOpenIdMetadata"),
-    )
-    CHANNEL_SERVICE: Optional[str] = Field(
-        default=None,
-        validation_alias=AliasChoices("CHANNEL_SERVICE", "ChannelService"),
+        validation_alias=AliasChoices("MICROSOFT_APP_TENANT_ID", "MicrosoftAppTenantId"),
     )
 
-    # Otros settings de tu app (ejemplo)
-    APP_TZ: Optional[str] = Field(default="UTC")
+    N2SQL_URL: str
+    N2SQL_QUERY_PATH: str = "/v1/query"
+    N2SQL_API_KEY: Optional[str] = None
+    N2SQL_TIMEOUT_S: int = 30
 
-    @field_validator("MICROSOFT_APP_ID", "MICROSOFT_APP_PASSWORD", mode="before")
-    @classmethod
-    def _strip_spaces(cls, v):
-        # Recorta espacios si por error se pegaron con espacios al inicio/fin
-        if isinstance(v, str):
-            return v.strip()
-        return v
+    APP_TZ: str = "America/Lima"
+    N2SQL_TRIGGERS: str = "dt:,consulta ,n2sql:"
+    N2SQL_MAX_ROWS: int = 20
+    PORT: int = int(os.getenv("PORT", "8000"))
+    ENV: str = os.getenv("ENV", "prod")
 
+    @property
+    def triggers(self) -> List[str]:
+        return [t.strip() for t in self.N2SQL_TRIGGERS.split(",") if t.strip()]
 
 settings = Settings()
