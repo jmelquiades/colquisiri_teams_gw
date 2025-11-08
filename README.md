@@ -82,7 +82,6 @@ Copiar código
 | Gateway | `N2SQL_TRIGGERS` | Triggers válidos (`dt:,consulta ,n2sql:`) |
 | | `N2SQL_MAX_ROWS` | Filas máximas a renderizar en la respuesta inicial (20) |
 | | `N2SQL_MAX_ROWS_EXPANDED` | Filas al pulsar “Ver más filas” (60) |
-| | `N2SQL_MAX_ROWS_FINAL` | Si es >0, número final de filas tras una segunda ampliación |
 | | `N2SQL_SHOW_SQL` | `true/false` para mostrar la sentencia SQL en la respuesta |
 | | `LOG_LEVEL` | Nivel de logging (`INFO`) |
 

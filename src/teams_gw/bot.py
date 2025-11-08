@@ -133,11 +133,9 @@ class TeamsGatewayBot(ActivityHandler):
             rows = payload.get("rows") or payload.get("data")
             if isinstance(rows, list):
                 total = len(rows)
-        if settings.N2SQL_MAX_ROWS_FINAL and total and target_rows >= total:
-            target_rows = total
         md = format_n2sql_payload(payload, max_rows=target_rows)
         await turn_context.send_activity(Activity(text=md, text_format="markdown"))
-        if total and settings.N2SQL_MAX_ROWS_FINAL and target_rows < total:
+        if total and target_rows < total:
             await self._send_more_button(turn_context)
 
     async def _send_more_button(self, turn_context: TurnContext):

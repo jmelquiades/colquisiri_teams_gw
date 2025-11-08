@@ -35,7 +35,6 @@ class Settings(BaseSettings):
     N2SQL_TRIGGERS: str = "dt:,consulta ,n2sql:"
     N2SQL_MAX_ROWS: int = 20
     N2SQL_MAX_ROWS_EXPANDED: int = 60
-    N2SQL_MAX_ROWS_FINAL: int = 0  # 0 = mostrar todas las restantes
     PORT: int = int(os.getenv("PORT", "8000"))
     ENV: str = os.getenv("ENV", "prod")
 
