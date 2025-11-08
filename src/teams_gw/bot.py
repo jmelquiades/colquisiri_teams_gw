@@ -1,5 +1,6 @@
 from __future__ import annotations
 from botbuilder.core import ActivityHandler, TurnContext
+from botbuilder.schema import Activity
 from .settings import settings
 from .n2sql_client import client
 from .formatters import format_n2sql_payload
@@ -69,7 +70,7 @@ class TeamsGatewayBot(ActivityHandler):
             try:
                 payload = await client.ask(query, dataset=ds)
                 md = format_n2sql_payload(payload)
-                await turn_context.send_activity(md)
+                await turn_context.send_activity(Activity(text=md, text_format="markdown"))
             except Exception:
                 await turn_context.send_activity(
                     "No pude resolver la consulta ahora. Inténtalo de nuevo más tarde."
