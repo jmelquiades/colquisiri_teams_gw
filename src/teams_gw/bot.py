@@ -4,7 +4,7 @@ import logging
 from typing import Any
 
 from botbuilder.core import ActivityHandler, ConversationState, MessageFactory, TurnContext
-from botbuilder.schema import ActionTypes, Activity, Attachment, CardAction, HeroCard
+from botbuilder.schema import ActionTypes, Activity, Attachment, CardAction, HeroCard, InvokeResponse
 from .settings import settings
 from .n2sql_client import client
 from .formatters import format_n2sql_payload
@@ -99,20 +99,32 @@ class TeamsGatewayBot(ActivityHandler):
         # Último recurso: todo el texto como consulta
         return t, None
 
-    async def on_message_activity(self, turn_context: TurnContext):
+    async def _handle_card_action(self, turn_context: TurnContext) -> bool:
         value = turn_context.activity.value or {}
-        if isinstance(value, dict):
-            action = value.get("action")
-            if action == "n2sql_more":
-                await self._send_more_rows(turn_context)
-                return
-            if action == "n2sql_faq":
-                query = (value.get("query") or "").strip()
-                if query:
-                    await self._run_query(turn_context, query, None, announce=False)
-                else:
-                    await turn_context.send_activity("No pude recuperar esa consulta rápida.")
-                return
+        if not isinstance(value, dict):
+            return False
+
+        action = value.get("action")
+        if action == "n2sql_more":
+            await self._send_more_rows(turn_context)
+            return True
+        if action == "n2sql_faq":
+            query = (value.get("query") or "").strip()
+            if query:
+                await self._run_query(turn_context, query, None, announce=False)
+            else:
+                await turn_context.send_activity("No pude recuperar esa consulta rápida.")
+            return True
+        return False
+
+    async def on_invoke_activity(self, turn_context: TurnContext):
+        if await self._handle_card_action(turn_context):
+            return InvokeResponse(status=200)
+        return await super().on_invoke_activity(turn_context)
+
+    async def on_message_activity(self, turn_context: TurnContext):
+        if await self._handle_card_action(turn_context):
+            return
 
         text = (turn_context.activity.text or "").strip()
 
