@@ -290,7 +290,7 @@ class TeamsGatewayBot(ActivityHandler):
                 {
                     "type": "Container",
                     "id": section_id,
-                    "isVisible": False,
+                    "isVisible": True,
                     "items": group_items,
                 }
             )
