@@ -65,6 +65,9 @@ def _patched_get_access_token(self: MicrosoftAppCredentials) -> str:
         return cached
 
     scope = getattr(self, "oauth_scope", None) or os.getenv("MicrosoftAppOAuthScope") or "https://api.botframework.com/.default"
+    scope = scope.strip()
+    if not scope.endswith("/.default"):
+        scope = f"{scope.rstrip('/')}/.default"
     app = getattr(self, "_patched_msal_app", None)
     if not app:
         app = ConfidentialClientApplication(
