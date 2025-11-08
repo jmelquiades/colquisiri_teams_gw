@@ -247,6 +247,7 @@ class TeamsGatewayBot(ActivityHandler):
             toggle_action = {
                 "type": "Action.ToggleVisibility",
                 "title": group["title"],
+                "style": "positive",
                 "targetElements": [],
             }
             toggle_actions.append(toggle_action)
