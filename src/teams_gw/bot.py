@@ -93,7 +93,7 @@ class TeamsGatewayBot(ActivityHandler):
 
             await self._last_query_accessor.set(
                 turn_context,
-                {"payload": payload, "query": query, "dataset": ds},
+                {"payload": payload, "query": query, "dataset": ds, "stage": "initial"},
             )
             md = format_n2sql_payload(payload)
             await turn_context.send_activity(Activity(text=md, text_format="markdown"))
@@ -111,12 +111,16 @@ class TeamsGatewayBot(ActivityHandler):
         )
 
     def _has_more_rows(self, payload: dict[str, Any]) -> bool:
+        total = self._total_rows(payload)
+        return total > settings.N2SQL_MAX_ROWS
+
+    def _total_rows(self, payload: dict[str, Any]) -> int:
         total = payload.get("rowcount")
         if total is None:
             rows = payload.get("rows") or payload.get("data")
             if isinstance(rows, list):
                 total = len(rows)
-        return bool(total and total > settings.N2SQL_MAX_ROWS)
+        return int(total or 0)
 
     async def _send_more_rows(self, turn_context: TurnContext):
         last = await self._last_query_accessor.get(turn_context, None)
@@ -127,15 +131,31 @@ class TeamsGatewayBot(ActivityHandler):
         if not payload:
             await turn_context.send_activity("No pude recuperar los resultados anteriores.")
             return
-        target_rows = settings.N2SQL_MAX_ROWS_EXPANDED
-        total = payload.get("rowcount")
-        if total is None:
-            rows = payload.get("rows") or payload.get("data")
-            if isinstance(rows, list):
-                total = len(rows)
+        total = self._total_rows(payload)
+        if not total:
+            await turn_context.send_activity("No tengo más filas para mostrar.")
+            return
+
+        stage = last.get("stage", "initial")
+        show_more = False
+        if stage == "initial":
+            target_rows = min(settings.N2SQL_MAX_ROWS_EXPANDED, total)
+            next_stage = "expanded"
+            show_more = total > target_rows
+        elif stage == "expanded":
+            target_rows = total
+            next_stage = "done"
+        else:
+            await turn_context.send_activity("Ya estás viendo todas las filas disponibles.")
+            return
+
         md = format_n2sql_payload(payload, max_rows=target_rows)
         await turn_context.send_activity(Activity(text=md, text_format="markdown"))
-        if total and target_rows < total:
+        last["stage"] = next_stage
+        await self._last_query_accessor.set(turn_context, last)
+        await self.conversation_state.save_changes(turn_context)
+
+        if show_more:
             await self._send_more_button(turn_context)
 
     async def _send_more_button(self, turn_context: TurnContext):
