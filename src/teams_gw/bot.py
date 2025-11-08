@@ -12,7 +12,6 @@ from .formatters import format_n2sql_payload
 TRIGGER_BASES = [p.lower().rstrip(":").strip() for p in settings.triggers]
 FAQ_QUERIES = [
     {
-        "id": "facturacion",
         "title": "Facturación",
         "items": [
             {
@@ -30,7 +29,6 @@ FAQ_QUERIES = [
         ],
     },
     {
-        "id": "clientes",
         "title": "Clientes",
         "items": [
             {
@@ -50,7 +48,6 @@ class TeamsGatewayBot(ActivityHandler):
     def __init__(self, conversation_state: ConversationState):
         self.conversation_state = conversation_state
         self._last_query_accessor = conversation_state.create_property("last_n2sql_query")
-        self._faq_state_accessor = conversation_state.create_property("faq_state")
 
     def _matches_trigger(self, text: str | None) -> bool:
         if not text:
@@ -120,9 +117,6 @@ class TeamsGatewayBot(ActivityHandler):
                 else:
                     await turn_context.send_activity("No pude recuperar esa consulta rápida.")
                 return
-            if action == "faq_group":
-                await self._handle_faq_group(turn_context, value.get("group"))
-                return
 
         text = (turn_context.activity.text or "").strip()
 
@@ -133,7 +127,6 @@ class TeamsGatewayBot(ActivityHandler):
 
         normalized = text.lower()
         if normalized in {"faq", "preguntas frecuentes", "ayuda"}:
-            await self._faq_state_accessor.set(turn_context, {"expanded": None})
             await self._send_faq_card(turn_context)
             return
 
@@ -141,17 +134,6 @@ class TeamsGatewayBot(ActivityHandler):
             "Para N2SQL usa `dt:` o `dt[dataset]:`. Ej.: `dt[odoo]: facturas pendientes de pago (cliente,monto,total)`"
         )
         await self._send_faq_card(turn_context)
-
-    async def _handle_faq_group(self, turn_context: TurnContext, group_id: str | None):
-        state = await self._faq_state_accessor.get(turn_context, {"expanded": None})
-        current = state.get("expanded")
-        new_value = None
-        if group_id and group_id != current:
-            new_value = group_id
-        state["expanded"] = new_value
-        await self._faq_state_accessor.set(turn_context, state)
-        await self.conversation_state.save_changes(turn_context)
-        await self._send_faq_card(turn_context, expanded_group=new_value)
 
     async def _run_query(
         self,
@@ -256,66 +238,61 @@ class TeamsGatewayBot(ActivityHandler):
     async def _send_faq_card(self, turn_context: TurnContext, expanded_group: str | None = None):
         if not FAQ_QUERIES:
             return
-        buttons = []
-        expanded_body = []
+        sections = []
         for group in FAQ_QUERIES:
-            buttons.append(
-                {
-                    "type": "Action.Submit",
-                    "title": group["title"],
-                    "style": "positive",
-                    "data": {"action": "faq_group", "group": group["id"]},
-                }
-            )
-            if expanded_group and group["id"] == expanded_group:
-                for item in group["items"]:
-                    data = {"action": "n2sql_faq", "query": item.get("query")}
-                    if item.get("dataset"):
-                        data["dataset"] = item["dataset"]
-                    expanded_body.append(
-                        {
-                            "type": "Container",
-                            "items": [
-                                {
-                                    "type": "TextBlock",
-                                    "text": f"**{item['title']}**",
-                                    "wrap": True,
-                                },
-                                {
-                                    "type": "TextBlock",
-                                    "text": item.get("desc", ""),
-                                    "isSubtle": True,
-                                    "spacing": "None",
-                                    "wrap": True,
-                                },
-                                {
-                                    "type": "ActionSet",
-                                    "spacing": "Small",
-                                    "actions": [
-                                        {
-                                            "type": "Action.Submit",
-                                            "title": "Ejecutar",
-                                            "data": data,
-                                        }
-                                    ],
-                                },
-                            ],
-                            "separator": True,
-                            "spacing": "Medium",
-                        }
-                    )
-                expanded_body.append(
+            items = []
+            for item in group["items"]:
+                data = {"action": "n2sql_faq", "query": item.get("query")}
+                if item.get("dataset"):
+                    data["dataset"] = item["dataset"]
+                items.append(
                     {
-                        "type": "ActionSet",
-                        "actions": [
+                        "type": "Container",
+                        "items": [
                             {
-                                "type": "Action.Submit",
-                                "title": "Ocultar",
-                                "data": {"action": "faq_group", "group": group["id"]},
-                            }
+                                "type": "TextBlock",
+                                "text": f"**{item['title']}**",
+                                "wrap": True,
+                            },
+                            {
+                                "type": "TextBlock",
+                                "text": item.get("desc", ""),
+                                "isSubtle": True,
+                                "spacing": "None",
+                                "wrap": True,
+                            },
+                            {
+                                "type": "ActionSet",
+                                "spacing": "Small",
+                                "actions": [
+                                    {
+                                        "type": "Action.Submit",
+                                        "title": "Ejecutar",
+                                        "style": "positive",
+                                        "data": data,
+                                    }
+                                ],
+                            },
                         ],
+                        "separator": True,
+                        "spacing": "Medium",
                     }
                 )
+            sections.append(
+                {
+                    "type": "Container",
+                    "items": [
+                        {
+                            "type": "TextBlock",
+                            "text": group["title"],
+                            "weight": "Bolder",
+                            "wrap": True,
+                        },
+                        *items,
+                    ],
+                    "spacing": "Medium",
+                }
+            )
         card = {
             "type": "AdaptiveCard",
             "version": "1.5",
@@ -333,9 +310,8 @@ class TeamsGatewayBot(ActivityHandler):
                     "wrap": True,
                     "spacing": "Small",
                 },
-                {"type": "ActionSet", "actions": buttons},
-            ]
-            + (expanded_body or []),
+                *sections,
+            ],
         }
         attachment = Attachment(
             content_type="application/vnd.microsoft.card.adaptive",
