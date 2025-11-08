@@ -30,6 +30,15 @@ log = logging.getLogger("teams_gw.app")
 app = FastAPI(title="teams_gw")
 app.include_router(health_router)
 
+for env_key, env_value in {
+    "MicrosoftAppType": "SingleTenant",
+    "MicrosoftAppTenantId": settings.MICROSOFT_APP_TENANT_ID,
+    "MicrosoftAppOAuthScope": settings.MICROSOFT_APP_OAUTH_SCOPE,
+}.items():
+    if env_value:
+        os.environ[env_key] = env_value
+
+
 adapter_settings = BotFrameworkAdapterSettings(
     settings.MICROSOFT_APP_ID,
     settings.MICROSOFT_APP_PASSWORD,
