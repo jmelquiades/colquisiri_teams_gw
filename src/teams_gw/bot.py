@@ -284,13 +284,13 @@ class TeamsGatewayBot(ActivityHandler):
                         ],
                         "separator": True,
                         "spacing": "Medium",
-                    }
-                )
+                }
+            )
             containers.append(
                 {
                     "type": "Container",
                     "id": section_id,
-                    "isVisible": True,
+                    "isVisible": False,
                     "items": group_items,
                 }
             )
