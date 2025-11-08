@@ -95,12 +95,13 @@ async def messages(request: Request):
         return {"ok": True}
     except connector_models.ErrorResponseException as e:
         status, reason, body_text = await _extract_error_details(e)
+        inner_details = _format_inner_error(e)
         log.error(
-            "Connector reply failed: status=%s reason=%s url=%s convo=%s activityId=%s body=%s raw=%r inner=%r",
+            "Connector reply failed: status=%s reason=%s url=%s convo=%s activityId=%s body=%s raw=%r inner=%r inner_details=%s",
             status, reason, activity.service_url,
             (activity.conversation and activity.conversation.id),
             getattr(activity, "id", None),
-            body_text, e, getattr(e, "inner_exception", None),
+            body_text, e, getattr(e, "inner_exception", None), inner_details,
         )
         return JSONResponse(status_code=502, content={"ok": False, "error": "connector_unauthorized"})
     except Exception as e:
@@ -154,6 +155,23 @@ async def _extract_error_details(error: connector_models.ErrorResponseException)
             break
 
     return status, reason, body_text
+
+
+def _format_inner_error(error: connector_models.ErrorResponseException) -> dict[str, Any]:
+    inner = getattr(error, "inner_exception", None)
+    if not inner:
+        return {}
+    payload: dict[str, Any] = {}
+    err_obj = getattr(inner, "error", None)
+    if err_obj:
+        payload["code"] = getattr(err_obj, "code", None)
+        payload["message"] = getattr(err_obj, "message", None)
+        payload["inner_error"] = getattr(err_obj, "inner_error", None)
+    for attr in ("status", "status_code", "response"):
+        val = getattr(inner, attr, None)
+        if val is not None and attr not in payload:
+            payload[attr] = val
+    return payload
         
 @app.get("/")
 async def root():
