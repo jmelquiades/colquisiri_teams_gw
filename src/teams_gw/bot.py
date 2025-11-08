@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Any
 from botbuilder.core import ActivityHandler, TurnContext, ConversationState
-from botbuilder.schema import Activity, SuggestedActions, CardAction, ActionTypes
+from botbuilder.schema import Activity, CardAction, ActionTypes, HeroCard
 from .settings import settings
 from .n2sql_client import client
 from .formatters import format_n2sql_payload
@@ -88,21 +88,7 @@ class TeamsGatewayBot(ActivityHandler):
                 await self.conversation_state.save_changes(turn_context)
 
                 if self._has_more_rows(payload):
-                    await turn_context.send_activity(
-                        Activity(
-                            text="Hay más filas disponibles:",
-                            suggested_actions=SuggestedActions(
-                                actions=[
-                                    CardAction(
-                                        type=ActionTypes.message_back,
-                                        title="Ver más filas",
-                                        text="ver_mas",
-                                        value={"action": "n2sql_more"},
-                                    )
-                                ]
-                            ),
-                        )
-                    )
+                    await self._send_more_button(turn_context)
             except Exception:
                 await turn_context.send_activity(
                     "No pude resolver la consulta ahora. Inténtalo de nuevo más tarde."
@@ -132,3 +118,19 @@ class TeamsGatewayBot(ActivityHandler):
             return
         md = format_n2sql_payload(payload, max_rows=settings.N2SQL_MAX_ROWS_EXPANDED)
         await turn_context.send_activity(Activity(text=md, text_format="markdown"))
+
+    async def _send_more_button(self, turn_context: TurnContext):
+        # Enviar tarjeta con botón "Ver más" para que el usuario amplíe resultados.
+        card = HeroCard(
+            text="Hay más filas disponibles:",
+            buttons=[
+                CardAction(
+                    type=ActionTypes.message_back,
+                    title="Ver más filas",
+                    text="ver_mas_filas",
+                    display_text="Ver más filas",
+                    value={"action": "n2sql_more"},
+                )
+            ],
+        )
+        await turn_context.send_activity(Activity(attachments=[card.to_attachment()]))
