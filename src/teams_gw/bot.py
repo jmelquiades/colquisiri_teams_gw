@@ -286,8 +286,8 @@ class TeamsGatewayBot(ActivityHandler):
                         ],
                         "separator": True,
                         "spacing": "Medium",
-                }
-            )
+                    }
+                )
             containers.append(
                 {
                     "type": "Container",
