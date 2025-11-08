@@ -250,7 +250,7 @@ class TeamsGatewayBot(ActivityHandler):
                 "style": "positive",
                 "targetElements": [],
             }
-            toggle_actions.append(toggle_action)
+            toggle_actions.append((toggle_action, section_id))
             group_items = []
             for item in group["items"]:
                 data = {"action": "n2sql_faq", "query": item.get("query")}
@@ -315,15 +315,16 @@ class TeamsGatewayBot(ActivityHandler):
                 },
                 {
                     "type": "ActionSet",
-                    "actions": toggle_actions,
+                    "actions": [action for action, _ in toggle_actions],
                 },
             ]
             + containers,
         }
         # Ajustar targets para que solo un grupo esté visible
-        for action, section_id in zip(toggle_actions, section_ids):
+        for action, section_id in toggle_actions:
             action["targetElements"] = [
-                {"elementId": sid, "isVisible": sid == section_id} for sid in section_ids
+                {"elementId": sid, "isVisible": sid == section_id, "mode": ("toggle" if sid == section_id else "hide")}
+                for sid in section_ids
             ]
         attachment = Attachment(
             content_type="application/vnd.microsoft.card.adaptive",
