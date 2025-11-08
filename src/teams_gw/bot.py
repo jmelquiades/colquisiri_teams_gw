@@ -244,43 +244,53 @@ class TeamsGatewayBot(ActivityHandler):
         await turn_context.send_activity(message)
 
     async def _send_faq_card(self, turn_context: TurnContext):
-            if not FAQ_GROUPS:
-                return
+        if not FAQ_GROUPS:
+            return
 
-            body: list[dict[str, Any]] = [
-                {
-                    "type": "TextBlock",
-                    "text": "Preguntas frecuentes",
-                    "weight": "Bolder",
-                    "size": "Medium",
-                },
-                {
-                    "type": "TextBlock",
-                    "text": "Selecciona una consulta rápida:",
-                    "isSubtle": True,
-                    "wrap": True,
-                    "spacing": "Small",
-                },
-            ]
+        def _chunk(seq: list[Any], size: int) -> list[list[Any]]:
+            return [seq[i : i + size] for i in range(0, len(seq), size)]
 
-            for idx, group in enumerate(FAQ_GROUPS):
+        body: list[dict[str, Any]] = [
+            {
+                "type": "TextBlock",
+                "text": "Preguntas frecuentes",
+                "weight": "Bolder",
+                "size": "Medium",
+            },
+            {
+                "type": "TextBlock",
+                "text": "Selecciona una consulta rápida:",
+                "isSubtle": True,
+                "wrap": True,
+                "spacing": "Small",
+            },
+        ]
+
+        enumerated_groups = list(enumerate(FAQ_GROUPS))
+        for row in _chunk(enumerated_groups, 2):
+            columns: list[dict[str, Any]] = []
+            row_containers: list[dict[str, Any]] = []
+            for idx, group in row:
                 section_id = f"faq_section_{idx}"
-
-                # Encabezado estilo botón azul para cada grupo
-                body.append(
-                    {
-                        "type": "ActionSet",
-                        "spacing": "Medium",
-                        "actions": [
-                            {
-                                "type": "Action.ToggleVisibility",
-                                "title": group["title"],
-                                "style": "positive",
-                                "targetElements": [section_id],
-                            }
-                        ],
-                    }
-                )
+                column = {
+                    "type": "Column",
+                    "width": "stretch",
+                    "items": [
+                        {
+                            "type": "ActionSet",
+                            "spacing": "Small",
+                            "actions": [
+                                {
+                                    "type": "Action.ToggleVisibility",
+                                    "title": group["title"],
+                                    "style": "positive",
+                                    "targetElements": [section_id],
+                                }
+                            ],
+                        }
+                    ],
+                }
+                columns.append(column)
 
                 group_items = []
                 for item in group["items"]:
@@ -320,7 +330,7 @@ class TeamsGatewayBot(ActivityHandler):
                         }
                     )
 
-                body.append(
+                row_containers.append(
                     {
                         "type": "Container",
                         "id": section_id,
@@ -332,13 +342,26 @@ class TeamsGatewayBot(ActivityHandler):
                     }
                 )
 
-            card = {
-                "type": "AdaptiveCard",
-                "version": "1.5",
-                "body": body,
-            }
-            attachment = Attachment(
-                content_type="application/vnd.microsoft.card.adaptive",
-                content=card,
+            # If we had only one column in the last row, add an empty column for spacing
+            if len(columns) == 1:
+                columns.append({"type": "Column", "width": "stretch", "items": []})
+
+            body.append(
+                {
+                    "type": "ColumnSet",
+                    "spacing": "Medium",
+                    "columns": columns,
+                }
             )
-            await turn_context.send_activity(MessageFactory.attachment(attachment))
+            body.extend(row_containers)
+
+        card = {
+            "type": "AdaptiveCard",
+            "version": "1.5",
+            "body": body,
+        }
+        attachment = Attachment(
+            content_type="application/vnd.microsoft.card.adaptive",
+            content=card,
+        )
+        await turn_context.send_activity(MessageFactory.attachment(attachment))
