@@ -127,8 +127,18 @@ class TeamsGatewayBot(ActivityHandler):
         if not payload:
             await turn_context.send_activity("No pude recuperar los resultados anteriores.")
             return
-        md = format_n2sql_payload(payload, max_rows=settings.N2SQL_MAX_ROWS_EXPANDED)
+        target_rows = settings.N2SQL_MAX_ROWS_EXPANDED
+        total = payload.get("rowcount")
+        if total is None:
+            rows = payload.get("rows") or payload.get("data")
+            if isinstance(rows, list):
+                total = len(rows)
+        if settings.N2SQL_MAX_ROWS_FINAL and total and target_rows >= total:
+            target_rows = total
+        md = format_n2sql_payload(payload, max_rows=target_rows)
         await turn_context.send_activity(Activity(text=md, text_format="markdown"))
+        if total and settings.N2SQL_MAX_ROWS_FINAL and target_rows < total:
+            await self._send_more_button(turn_context)
 
     async def _send_more_button(self, turn_context: TurnContext):
         # Enviar tarjeta con botón "Ver más" para que el usuario amplíe resultados.
@@ -146,7 +156,7 @@ class TeamsGatewayBot(ActivityHandler):
         )
         attachment = Attachment(
             content_type="application/vnd.microsoft.card.hero",
-            content=card.__dict__,
+            content=card.serialize(),
         )
         message = MessageFactory.attachment(attachment)
         await turn_context.send_activity(message)
