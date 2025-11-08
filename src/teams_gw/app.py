@@ -38,11 +38,13 @@ for env_key, env_value in {
     if env_value:
         os.environ[env_key] = env_value
 
-os.environ["MicrosoftAppType"] = "SingleTenant"
-if settings.MICROSOFT_APP_TENANT_ID:
-    os.environ["MicrosoftAppTenantId"] = settings.MICROSOFT_APP_TENANT_ID
-if settings.MICROSOFT_APP_OAUTH_SCOPE:
-    os.environ["MicrosoftAppOAuthScope"] = settings.MICROSOFT_APP_OAUTH_SCOPE
+log.info(
+    "Adapter auth env → type=%s tenant=%s scope=%s app_id=%s",
+    os.getenv("MicrosoftAppType"),
+    os.getenv("MicrosoftAppTenantId"),
+    os.getenv("MicrosoftAppOAuthScope"),
+    settings.MICROSOFT_APP_ID,
+)
 
 
 adapter_settings = BotFrameworkAdapterSettings(
@@ -120,6 +122,8 @@ async def messages(request: Request):
         )
         return JSONResponse(status_code=502, content={"ok": False, "error": "connector_unauthorized"})
     except Exception as e:
+        if isinstance(e, KeyError) and e.args == ("access_token",):
+            await _log_auth_context()
         log.exception("Unexpected error replying to Teams: %s", e)
         return JSONResponse(status_code=500, content={"ok": False, "error": "unexpected"})
 
@@ -221,3 +225,32 @@ async def bf_token():
         "appid": payload.get("appid"),
         "iss": payload.get("iss"),
     }
+
+
+async def _log_auth_context() -> None:
+    """Emit diagnostic information when AppCredentials cannot produce an access token."""
+    log.error(
+        "AppCredentials debug → type=%s tenant=%s scope=%s app_id=%s",
+        os.getenv("MicrosoftAppType"),
+        os.getenv("MicrosoftAppTenantId"),
+        os.getenv("MicrosoftAppOAuthScope"),
+        settings.MICROSOFT_APP_ID,
+    )
+    creds = MicrosoftAppCredentials(
+        settings.MICROSOFT_APP_ID,
+        settings.MICROSOFT_APP_PASSWORD,
+        settings.MICROSOFT_APP_TENANT_ID,
+        settings.MICROSOFT_APP_OAUTH_SCOPE,
+    )
+    try:
+        tok = creds.get_access_token()
+        if inspect.isawaitable(tok):
+            tok = await tok
+    except Exception as auth_exc:
+        log.error("Access-token fetch raised: %r", auth_exc)
+        return
+
+    if isinstance(tok, str):
+        log.error("Access-token sample (first 32 chars): %s…", tok[:32])
+    else:
+        log.error("Access-token payload (non-string): %r", tok)
