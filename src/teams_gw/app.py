@@ -168,7 +168,9 @@ async def bf_token():
         settings.MICROSOFT_APP_TENANT_ID,
         settings.MICROSOFT_APP_OAUTH_SCOPE,
     )
-    tok = await creds.get_access_token()
+    tok = creds.get_access_token()
+    if inspect.isawaitable(tok):
+        tok = await tok
     # Solo inspección: header.payload (sin verificación)
     import base64, json
     def _b64url_decode(seg):
