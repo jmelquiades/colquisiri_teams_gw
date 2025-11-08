@@ -240,13 +240,15 @@ class TeamsGatewayBot(ActivityHandler):
             return
         toggle_actions = []
         containers = []
+        section_ids: list[str] = []
         for group in FAQ_QUERIES:
             section_id = f"faq_{group['title'].lower().replace(' ', '_')}"
+            section_ids.append(section_id)
             toggle_actions.append(
                 {
                     "type": "Action.ToggleVisibility",
                     "title": group["title"],
-                    "targetElements": [section_id],
+                    "targetElements": [],
                 }
             )
             group_items = []
@@ -318,6 +320,11 @@ class TeamsGatewayBot(ActivityHandler):
             ]
             + containers,
         }
+        # Ajustar targets para que solo un grupo esté visible
+        for action, section_id in zip(toggle_actions, section_ids):
+            action["targetElements"] = [
+                {"elementId": sid, "isVisible": sid == section_id} for sid in section_ids
+            ]
         attachment = Attachment(
             content_type="application/vnd.microsoft.card.adaptive",
             content=card,
