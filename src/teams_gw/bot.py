@@ -231,17 +231,52 @@ class TeamsGatewayBot(ActivityHandler):
         message = MessageFactory.attachment(attachment)
         await turn_context.send_activity(message)
 
-    async def _send_faq_card(self, turn_context: TurnContext):
+   async def _send_faq_card(self, turn_context: TurnContext):
         if not FAQ_GROUPS:
             return
-        sections = []
-        for group in FAQ_GROUPS:
-            items = []
+
+        body: list[dict[str, Any]] = [
+            {
+                "type": "TextBlock",
+                "text": "Preguntas frecuentes",
+                "weight": "Bolder",
+                "size": "Medium",
+            },
+            {
+                "type": "TextBlock",
+                "text": "Selecciona una consulta rápida:",
+                "isSubtle": True,
+                "wrap": True,
+                "spacing": "Small",
+            },
+        ]
+
+        for idx, group in enumerate(FAQ_GROUPS):
+            section_id = f"faq_section_{idx}"
+
+            # Encabezado estilo botón azul para cada grupo
+            body.append(
+                {
+                    "type": "ActionSet",
+                    "spacing": "Medium",
+                    "actions": [
+                        {
+                            "type": "Action.ToggleVisibility",
+                            "title": group["title"],
+                            "style": "positive",
+                            "targetElements": [section_id],
+                        }
+                    ],
+                }
+            )
+
+            group_items = []
             for item in group["items"]:
-                data = {"action": "n2sql_faq", "query": item.get("query")}
-                items.append(
+                group_items.append(
                     {
                         "type": "Container",
+                        "separator": True,
+                        "spacing": "Medium",
                         "items": [
                             {
                                 "type": "TextBlock",
@@ -262,49 +297,33 @@ class TeamsGatewayBot(ActivityHandler):
                                     {
                                         "type": "Action.Submit",
                                         "title": "Ejecutar",
-                                        "data": data,
+                                        "data": {
+                                            "action": "n2sql_faq",
+                                            "query": item.get("query"),
+                                        },
                                     }
                                 ],
                             },
                         ],
-                        "separator": True,
-                        "spacing": "Medium",
                     }
                 )
-            sections.append(
+
+            body.append(
                 {
                     "type": "Container",
-                    "items": [
-                        {
-                            "type": "TextBlock",
-                            "text": group["title"],
-                            "weight": "Bolder",
-                            "wrap": True,
-                        },
-                        *items,
-                    ],
-                    "spacing": "Medium",
+                    "id": section_id,
+                    "isVisible": False,
+                    "style": "emphasis",
+                    "bleed": True,
+                    "spacing": "Small",
+                    "items": group_items,
                 }
             )
+
         card = {
             "type": "AdaptiveCard",
             "version": "1.5",
-            "body": [
-                {
-                    "type": "TextBlock",
-                    "text": "Preguntas frecuentes",
-                    "weight": "Bolder",
-                    "size": "Medium",
-                },
-                {
-                    "type": "TextBlock",
-                    "text": "Selecciona una consulta rápida:",
-                    "isSubtle": True,
-                    "wrap": True,
-                    "spacing": "Small",
-                },
-                *sections,
-            ],
+            "body": body,
         }
         attachment = Attachment(
             content_type="application/vnd.microsoft.card.adaptive",
