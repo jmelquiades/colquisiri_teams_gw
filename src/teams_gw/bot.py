@@ -12,6 +12,7 @@ from .formatters import format_n2sql_payload
 TRIGGER_BASES = [p.lower().rstrip(":").strip() for p in settings.triggers]
 FAQ_QUERIES = [
     {
+        "id": "facturacion",
         "title": "Facturación",
         "items": [
             {
@@ -29,6 +30,7 @@ FAQ_QUERIES = [
         ],
     },
     {
+        "id": "clientes",
         "title": "Clientes",
         "items": [
             {
@@ -48,6 +50,7 @@ class TeamsGatewayBot(ActivityHandler):
     def __init__(self, conversation_state: ConversationState):
         self.conversation_state = conversation_state
         self._last_query_accessor = conversation_state.create_property("last_n2sql_query")
+        self._faq_state_accessor = conversation_state.create_property("faq_state")
 
     def _matches_trigger(self, text: str | None) -> bool:
         if not text:
@@ -117,6 +120,9 @@ class TeamsGatewayBot(ActivityHandler):
                 else:
                     await turn_context.send_activity("No pude recuperar esa consulta rápida.")
                 return
+            if action == "faq_group":
+                await self._handle_faq_group(turn_context, value.get("group"))
+                return
 
         text = (turn_context.activity.text or "").strip()
 
@@ -127,6 +133,7 @@ class TeamsGatewayBot(ActivityHandler):
 
         normalized = text.lower()
         if normalized in {"faq", "preguntas frecuentes", "ayuda"}:
+            await self._faq_state_accessor.set(turn_context, {"expanded": None})
             await self._send_faq_card(turn_context)
             return
 
@@ -134,6 +141,17 @@ class TeamsGatewayBot(ActivityHandler):
             "Para N2SQL usa `dt:` o `dt[dataset]:`. Ej.: `dt[odoo]: facturas pendientes de pago (cliente,monto,total)`"
         )
         await self._send_faq_card(turn_context)
+
+    async def _handle_faq_group(self, turn_context: TurnContext, group_id: str | None):
+        state = await self._faq_state_accessor.get(turn_context, {"expanded": None})
+        current = state.get("expanded")
+        new_value = None
+        if group_id and group_id != current:
+            new_value = group_id
+        state["expanded"] = new_value
+        await self._faq_state_accessor.set(turn_context, state)
+        await self.conversation_state.save_changes(turn_context)
+        await self._send_faq_card(turn_context, expanded_group=new_value)
 
     async def _run_query(
         self,
@@ -235,67 +253,69 @@ class TeamsGatewayBot(ActivityHandler):
         message = MessageFactory.attachment(attachment)
         await turn_context.send_activity(message)
 
-    async def _send_faq_card(self, turn_context: TurnContext):
+    async def _send_faq_card(self, turn_context: TurnContext, expanded_group: str | None = None):
         if not FAQ_QUERIES:
             return
-        toggle_actions = []
-        containers = []
-        section_ids: list[str] = []
+        buttons = []
+        expanded_body = []
         for group in FAQ_QUERIES:
-            section_id = f"faq_{group['title'].lower().replace(' ', '_')}"
-            section_ids.append(section_id)
-            toggle_action = {
-                "type": "Action.ToggleVisibility",
-                "title": group["title"],
-                "style": "positive",
-                "targetElements": [],
-            }
-            toggle_actions.append((toggle_action, section_id))
-            group_items = []
-            for item in group["items"]:
-                data = {"action": "n2sql_faq", "query": item.get("query")}
-                if item.get("dataset"):
-                    data["dataset"] = item["dataset"]
-                group_items.append(
-                    {
-                        "type": "Container",
-                        "items": [
-                            {
-                                "type": "TextBlock",
-                                "text": f"**{item['title']}**",
-                                "wrap": True,
-                            },
-                            {
-                                "type": "TextBlock",
-                                "text": item.get("desc", ""),
-                                "isSubtle": True,
-                                "spacing": "None",
-                                "wrap": True,
-                            },
-                            {
-                                "type": "ActionSet",
-                                "spacing": "Small",
-                                "actions": [
-                                    {
-                                        "type": "Action.Submit",
-                                        "title": "Ejecutar",
-                                        "data": data,
-                                    }
-                                ],
-                            },
-                        ],
-                        "separator": True,
-                        "spacing": "Medium",
-                    }
-                )
-            containers.append(
+            buttons.append(
                 {
-                    "type": "Container",
-                    "id": section_id,
-                    "isVisible": False,
-                    "items": group_items,
+                    "type": "Action.Submit",
+                    "title": group["title"],
+                    "style": "positive",
+                    "data": {"action": "faq_group", "group": group["id"]},
                 }
             )
+            if expanded_group and group["id"] == expanded_group:
+                for item in group["items"]:
+                    data = {"action": "n2sql_faq", "query": item.get("query")}
+                    if item.get("dataset"):
+                        data["dataset"] = item["dataset"]
+                    expanded_body.append(
+                        {
+                            "type": "Container",
+                            "items": [
+                                {
+                                    "type": "TextBlock",
+                                    "text": f"**{item['title']}**",
+                                    "wrap": True,
+                                },
+                                {
+                                    "type": "TextBlock",
+                                    "text": item.get("desc", ""),
+                                    "isSubtle": True,
+                                    "spacing": "None",
+                                    "wrap": True,
+                                },
+                                {
+                                    "type": "ActionSet",
+                                    "spacing": "Small",
+                                    "actions": [
+                                        {
+                                            "type": "Action.Submit",
+                                            "title": "Ejecutar",
+                                            "data": data,
+                                        }
+                                    ],
+                                },
+                            ],
+                            "separator": True,
+                            "spacing": "Medium",
+                        }
+                    )
+                expanded_body.append(
+                    {
+                        "type": "ActionSet",
+                        "actions": [
+                            {
+                                "type": "Action.Submit",
+                                "title": "Ocultar",
+                                "data": {"action": "faq_group", "group": group["id"]},
+                            }
+                        ],
+                    }
+                )
         card = {
             "type": "AdaptiveCard",
             "version": "1.5",
@@ -313,20 +333,10 @@ class TeamsGatewayBot(ActivityHandler):
                     "wrap": True,
                     "spacing": "Small",
                 },
-                {
-                    "type": "ActionSet",
-                    "actions": [action for action, _ in toggle_actions],
-                },
+                {"type": "ActionSet", "actions": buttons},
             ]
-            + containers,
+            + (expanded_body or []),
         }
-        # Ajustar targets para que solo un grupo esté visible
-        for action, section_id in toggle_actions:
-            targets = []
-            for sid in section_ids:
-                mode = "toggle" if sid == section_id else "hide"
-                targets.append({"elementId": sid, "mode": mode})
-            action["targetElements"] = targets
         attachment = Attachment(
             content_type="application/vnd.microsoft.card.adaptive",
             content=card,
