@@ -231,102 +231,102 @@ class TeamsGatewayBot(ActivityHandler):
         message = MessageFactory.attachment(attachment)
         await turn_context.send_activity(message)
 
-   async def _send_faq_card(self, turn_context: TurnContext):
-        if not FAQ_GROUPS:
-            return
+    async def _send_faq_card(self, turn_context: TurnContext):
+            if not FAQ_GROUPS:
+                return
 
-        body: list[dict[str, Any]] = [
-            {
-                "type": "TextBlock",
-                "text": "Preguntas frecuentes",
-                "weight": "Bolder",
-                "size": "Medium",
-            },
-            {
-                "type": "TextBlock",
-                "text": "Selecciona una consulta rápida:",
-                "isSubtle": True,
-                "wrap": True,
-                "spacing": "Small",
-            },
-        ]
-
-        for idx, group in enumerate(FAQ_GROUPS):
-            section_id = f"faq_section_{idx}"
-
-            # Encabezado estilo botón azul para cada grupo
-            body.append(
+            body: list[dict[str, Any]] = [
                 {
-                    "type": "ActionSet",
-                    "spacing": "Medium",
-                    "actions": [
-                        {
-                            "type": "Action.ToggleVisibility",
-                            "title": group["title"],
-                            "style": "positive",
-                            "targetElements": [section_id],
-                        }
-                    ],
-                }
-            )
+                    "type": "TextBlock",
+                    "text": "Preguntas frecuentes",
+                    "weight": "Bolder",
+                    "size": "Medium",
+                },
+                {
+                    "type": "TextBlock",
+                    "text": "Selecciona una consulta rápida:",
+                    "isSubtle": True,
+                    "wrap": True,
+                    "spacing": "Small",
+                },
+            ]
 
-            group_items = []
-            for item in group["items"]:
-                group_items.append(
+            for idx, group in enumerate(FAQ_GROUPS):
+                section_id = f"faq_section_{idx}"
+
+                # Encabezado estilo botón azul para cada grupo
+                body.append(
                     {
-                        "type": "Container",
-                        "separator": True,
+                        "type": "ActionSet",
                         "spacing": "Medium",
-                        "items": [
+                        "actions": [
                             {
-                                "type": "TextBlock",
-                                "text": f"**{item['title']}**",
-                                "wrap": True,
-                            },
-                            {
-                                "type": "TextBlock",
-                                "text": item.get("desc", ""),
-                                "isSubtle": True,
-                                "spacing": "None",
-                                "wrap": True,
-                            },
-                            {
-                                "type": "ActionSet",
-                                "spacing": "Small",
-                                "actions": [
-                                    {
-                                        "type": "Action.Submit",
-                                        "title": "Ejecutar",
-                                        "data": {
-                                            "action": "n2sql_faq",
-                                            "query": item.get("query"),
-                                        },
-                                    }
-                                ],
-                            },
+                                "type": "Action.ToggleVisibility",
+                                "title": group["title"],
+                                "style": "positive",
+                                "targetElements": [section_id],
+                            }
                         ],
                     }
                 )
 
-            body.append(
-                {
-                    "type": "Container",
-                    "id": section_id,
-                    "isVisible": False,
-                    "style": "emphasis",
-                    "bleed": True,
-                    "spacing": "Small",
-                    "items": group_items,
-                }
-            )
+                group_items = []
+                for item in group["items"]:
+                    group_items.append(
+                        {
+                            "type": "Container",
+                            "separator": True,
+                            "spacing": "Medium",
+                            "items": [
+                                {
+                                    "type": "TextBlock",
+                                    "text": f"**{item['title']}**",
+                                    "wrap": True,
+                                },
+                                {
+                                    "type": "TextBlock",
+                                    "text": item.get("desc", ""),
+                                    "isSubtle": True,
+                                    "spacing": "None",
+                                    "wrap": True,
+                                },
+                                {
+                                    "type": "ActionSet",
+                                    "spacing": "Small",
+                                    "actions": [
+                                        {
+                                            "type": "Action.Submit",
+                                            "title": "Ejecutar",
+                                            "data": {
+                                                "action": "n2sql_faq",
+                                                "query": item.get("query"),
+                                            },
+                                        }
+                                    ],
+                                },
+                            ],
+                        }
+                    )
 
-        card = {
-            "type": "AdaptiveCard",
-            "version": "1.5",
-            "body": body,
-        }
-        attachment = Attachment(
-            content_type="application/vnd.microsoft.card.adaptive",
-            content=card,
-        )
-        await turn_context.send_activity(MessageFactory.attachment(attachment))
+                body.append(
+                    {
+                        "type": "Container",
+                        "id": section_id,
+                        "isVisible": False,
+                        "style": "emphasis",
+                        "bleed": True,
+                        "spacing": "Small",
+                        "items": group_items,
+                    }
+                )
+
+            card = {
+                "type": "AdaptiveCard",
+                "version": "1.5",
+                "body": body,
+            }
+            attachment = Attachment(
+                content_type="application/vnd.microsoft.card.adaptive",
+                content=card,
+            )
+            await turn_context.send_activity(MessageFactory.attachment(attachment))
