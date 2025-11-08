@@ -10,18 +10,34 @@ from .n2sql_client import client
 from .formatters import format_n2sql_payload
 
 TRIGGER_BASES = [p.lower().rstrip(":").strip() for p in settings.triggers]
-FAQ_QUERIES: list[dict[str, str | None]] = [
+FAQ_QUERIES = [
     {
-        "title": "Facturas pendientes",
-        "desc": "Lista facturas pendientes de pago.",
-        "query": "facturas pendientes de pago (cliente,fecha,monto,total)",
-        "dataset": None,
+        "title": "Facturación",
+        "items": [
+            {
+                "title": "Facturas pendientes",
+                "desc": "Lista facturas pendientes de pago.",
+                "query": "facturas pendientes de pago (cliente,fecha,monto,total)",
+                "dataset": None,
+            },
+            {
+                "title": "Total de facturas pendientes",
+                "desc": "Total adeudado por facturas pendientes.",
+                "query": "total de facturas pendientes de pago",
+                "dataset": None,
+            },
+        ],
     },
     {
-        "title": "Total de facturas pendientes",
-        "desc": "Total adeudado por facturas pendientes.",
-        "query": "total de facturas pendientes de pago",
-        "dataset": None,
+        "title": "Clientes",
+        "items": [
+            {
+                "title": "Datos de clientes",
+                "desc": "Información básica de clientes.",
+                "query": "datos de clientes (cliente,correo,telefono)",
+                "dataset": None,
+            }
+        ],
     },
 ]
 
@@ -222,33 +238,34 @@ class TeamsGatewayBot(ActivityHandler):
     async def _send_faq_card(self, turn_context: TurnContext):
         if not FAQ_QUERIES:
             return
-        containers = []
-        for item in FAQ_QUERIES:
-            data = {"action": "n2sql_faq", "query": item.get("query")}
-            if item.get("dataset"):
-                data["dataset"] = item["dataset"]
-            containers.append(
-                {
-                    "type": "Container",
-                    "selectAction": {"type": "Action.Submit", "data": data},
-                    "items": [
-                        {
-                            "type": "TextBlock",
-                            "text": item["title"],
-                            "weight": "Bolder",
-                            "wrap": True,
-                        },
-                        {
-                            "type": "TextBlock",
-                            "text": item.get("desc", ""),
-                            "isSubtle": True,
-                            "spacing": "None",
-                            "wrap": True,
-                        },
-                    ],
-                    "separator": True,
-                }
-            )
+        actions = []
+        for group in FAQ_QUERIES:
+            show_card = {
+                "type": "Action.ShowCard",
+                "title": group["title"],
+                "card": {
+                    "type": "AdaptiveCard",
+                    "version": "1.5",
+                    "body": [],
+                    "actions": [],
+                },
+            }
+            for item in group["items"]:
+                data = {"action": "n2sql_faq", "query": item.get("query")}
+                if item.get("dataset"):
+                    data["dataset"] = item["dataset"]
+                show_card["card"]["body"].append(
+                    {
+                        "type": "TextBlock",
+                        "text": f"**{item['title']}**\n{item.get('desc', '')}",
+                        "wrap": True,
+                        "spacing": "Small",
+                    }
+                )
+                show_card["card"]["actions"].append(
+                    {"type": "Action.Submit", "title": "Ejecutar", "data": data}
+                )
+            actions.append(show_card)
         card = {
             "type": "AdaptiveCard",
             "version": "1.5",
@@ -266,8 +283,8 @@ class TeamsGatewayBot(ActivityHandler):
                     "wrap": True,
                     "spacing": "Small",
                 },
-            ]
-            + containers,
+            ],
+            "actions": actions,
         }
         attachment = Attachment(
             content_type="application/vnd.microsoft.card.adaptive",
