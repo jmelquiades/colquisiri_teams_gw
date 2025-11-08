@@ -10,16 +10,18 @@ from .n2sql_client import client
 from .formatters import format_n2sql_payload
 
 TRIGGER_BASES = [p.lower().rstrip(":").strip() for p in settings.triggers]
-FAQ_QUERIES = [
+FAQ_QUERIES: list[dict[str, str | None]] = [
     {
         "title": "Facturas pendientes",
         "desc": "Lista facturas pendientes de pago.",
-        "query": "dt: facturas pendientes de pago (cliente,fecha,monto,total)",
+        "query": "facturas pendientes de pago (cliente,fecha,monto,total)",
+        "dataset": None,
     },
     {
         "title": "Total de facturas pendientes",
         "desc": "Total adeudado por facturas pendientes.",
-        "query": "dt: total de facturas pendientes de pago",
+        "query": "total de facturas pendientes de pago",
+        "dataset": None,
     },
 ]
 
