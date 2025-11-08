@@ -3,6 +3,7 @@ from __future__ import annotations
 import inspect
 import logging
 import os
+import time
 from typing import Any
 from urllib.parse import urlparse
 
@@ -20,6 +21,7 @@ from botbuilder.schema import Activity
 from botframework.connector import models as connector_models  # <-- para capturar el error
 from botframework.connector.auth import MicrosoftAppCredentials
 from botframework.connector.auth import microsoft_app_credentials as mac
+from msal import ConfidentialClientApplication
 
 from .bot import TeamsGatewayBot
 from .health import router as health_router
@@ -48,26 +50,38 @@ log.info(
 )
 
 
-_original_get_access_token = mac.MicrosoftAppCredentials.get_access_token
+def _msal_authority(creds: MicrosoftAppCredentials) -> str:
+    authority = getattr(creds, "authority", None)
+    if authority:
+        return authority
+    tenant = getattr(creds, "oauth_tenant", None) or os.getenv("MicrosoftAppTenantId") or "botframework.com"
+    return f"https://login.microsoftonline.com/{tenant}"
 
 
-def _normalize_access_token_payload(token):
-    if isinstance(token, str):
-        return token
-    if inspect.isawaitable(token):
-        async def _await_and_normalize():
-            result = await token
-            return result if isinstance(result, str) else (result or {}).get("access_token")
-        return _await_and_normalize()
-    return (token or {}).get("access_token")
+def _patched_get_access_token(self: MicrosoftAppCredentials) -> str:
+    cached = getattr(self, "_patched_token", None)
+    expires_at = getattr(self, "_patched_token_expires_at", 0)
+    if cached and expires_at - time.time() > 300:
+        return cached
 
+    scope = getattr(self, "oauth_scope", None) or os.getenv("MicrosoftAppOAuthScope") or "https://api.botframework.com/.default"
+    app = getattr(self, "_patched_msal_app", None)
+    if not app:
+        app = ConfidentialClientApplication(
+            client_id=getattr(self, "microsoft_app_id", None) or settings.MICROSOFT_APP_ID,
+            client_credential=getattr(self, "microsoft_app_password", None) or settings.MICROSOFT_APP_PASSWORD,
+            authority=_msal_authority(self),
+        )
+        self._patched_msal_app = app
 
-async def _patched_get_access_token(self):
-    token = _original_get_access_token(self)
-    normalized = _normalize_access_token_payload(token)
-    if inspect.isawaitable(normalized):
-        normalized = await normalized
-    return normalized
+    result = app.acquire_token_for_client(scopes=[scope])
+    token = result.get("access_token")
+    if not token:
+        raise RuntimeError(f"Could not acquire access token via MSAL: {result}")
+    ttl = int(result.get("expires_in", 3600))
+    self._patched_token = token
+    self._patched_token_expires_at = time.time() + ttl
+    return token
 
 
 mac.MicrosoftAppCredentials.get_access_token = _patched_get_access_token
