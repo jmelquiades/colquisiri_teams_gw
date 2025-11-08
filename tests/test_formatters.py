@@ -22,6 +22,17 @@ def test_table_data_records():
     md = format_n2sql_payload(payload)
     assert "x | y" in md and "10 | 20" in md
 
+def test_table_rows_dicts_without_columns():
+    payload = {
+        "rows": [
+            {"cliente": "A", "total": 10},
+            {"cliente": "B", "total": 20},
+        ]
+    }
+    md = format_n2sql_payload(payload)
+    assert "cliente | total" in md
+    assert "B | 20" in md
+
 def test_fallback_json():
     payload = {"unexpected": 1}
     md = format_n2sql_payload(payload)

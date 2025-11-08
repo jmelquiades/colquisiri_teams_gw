@@ -20,6 +20,13 @@ def format_n2sql_payload(payload: Dict[str, Any]) -> str:
             rows = [[row.get(h) for h in headers] for row in rows_data]
         else:
             rows = rows_data
+    elif isinstance(payload, dict) and isinstance(payload.get("rows"), list) and payload["rows"]:
+        first = payload["rows"][0]
+        if isinstance(first, dict):
+            headers = list(first.keys())
+            rows = [[item.get(h) for h in headers] for item in payload["rows"]]
+        elif isinstance(first, (list, tuple)):
+            rows = payload["rows"]
     elif isinstance(payload, dict) and isinstance(payload.get("data"), list) and payload["data"]:
         first = payload["data"][0]
         if isinstance(first, dict):
