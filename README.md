@@ -94,3 +94,26 @@ Copiar código
 - Cuando haya más datos, aparecerá el botón **Ver más filas** (usa `messageBack`) que vuelve a renderizar la consulta con `N2SQL_MAX_ROWS_EXPANDED`.
 - Puedes escribir `faq` o `preguntas frecuentes` para ver una tarjeta con consultas rápidas y ejecutarlas con un clic.
 - Si no incluyes el trigger, responderá con las instrucciones de uso.
+
+## Arquitectura y flujo
+
+1. **Teams → FastAPI**: el Channel Service de Teams envía cada actividad al endpoint `/api/messages`. FastAPI (`src/teams_gw/app.py`) valida encabezados, confía en el `serviceUrl` y canaliza la petición al Bot Framework Adapter.
+2. **Adapter → Bot**: el `BotFrameworkAdapter` inicializa el `TurnContext` y entrega el evento a `TeamsGatewayBot` (`src/teams_gw/bot.py`), que mantiene estado en memoria para paginar respuestas.
+3. **Bot → N2SQL**: cuando detecta un trigger válido, arma `{dataset,intent,params}` mediante `N2SQLClient` (`src/teams_gw/n2sql_client.py`) y hace un `POST` contra `/v1/query`.
+4. **Respuesta → Markdown**: los datos recibidos se convierten en tabla Markdown con `format_n2sql_payload` (`src/teams_gw/formatters.py`). Si hay más filas, se guarda contexto para que el botón “Ver más” solicite la siguiente vista.
+5. **FAQ/Acciones**: las tarjetas AdaptiveCard permiten disparar consultas frecuentes o expandir resultados mediante eventos `invoke/messageBack`, que el bot procesa sin requerir texto adicional del usuario.
+
+## Archivos Python principales
+
+| Archivo | Descripción |
+|---------|-------------|
+| `src/teams_gw/app.py` | Inicializa FastAPI, parchea `MicrosoftAppCredentials` para usar MSAL, confía en `serviceUrl`, registra rutas de salud y procesa actividades entrantes. |
+| `src/teams_gw/bot.py` | `ActivityHandler` que valida triggers (`dt:, n2sql:, consulta`), arma consultas, controla paginado, renderiza tablas Markdown y genera la tarjeta FAQ con botones horizontales. |
+| `src/teams_gw/settings.py` | Capa de configuración con Pydantic Settings; expone alias compatibles con Azure/Render y valores como triggers, límites y zona horaria. |
+| `src/teams_gw/n2sql_client.py` | Cliente HTTP asíncrono (httpx) que construye `dataset/intents/params`, agrega el API key si existe y gestiona el timeout. |
+| `src/teams_gw/formatters.py` | Convierte distintos formatos de payload (`columns/rows`, `data`, listas de dicts) a Markdown, respeta límites de filas y añade el SQL cuando está habilitado. |
+| `src/teams_gw/health.py` | Endpoints de diagnóstico (`/__ready`, `/health`, `/__env`, `/__auth-probe`) para monitoreo y pruebas de credenciales sin exponer secretos. |
+| `teams_autoanswer.py` | Script opcional RPA para macOS que detecta llamadas de Teams via API de Accesibilidad y acepta automáticamente (útil en centros de atención). |
+| `tests/test_formatters.py` | Pruebas unitarias que validan la lógica de `format_n2sql_payload`, distintos formatos y el límite de filas. |
+
+Con este mapa puedes continuar agregando nuevas tarjetas, comandos o datasets manteniendo claro dónde vive cada pieza del gateway.
