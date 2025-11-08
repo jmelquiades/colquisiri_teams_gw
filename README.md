@@ -92,4 +92,5 @@ Copiar código
   - `dt[odoo]: ventas por cliente`
 - El bot validará el trigger, enviará la consulta a N2SQL y devolverá una tabla Markdown (hasta `N2SQL_MAX_ROWS` filas) y, si `N2SQL_SHOW_SQL=true`, el bloque SQL.
 - Cuando haya más datos, aparecerá el botón **Ver más filas** (usa `messageBack`) que vuelve a renderizar la consulta con `N2SQL_MAX_ROWS_EXPANDED`.
+- Puedes escribir `faq` o `preguntas frecuentes` para ver una tarjeta con consultas rápidas y ejecutarlas con un clic.
 - Si no incluyes el trigger, responderá con las instrucciones de uso.

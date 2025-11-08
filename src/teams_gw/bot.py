@@ -10,6 +10,18 @@ from .n2sql_client import client
 from .formatters import format_n2sql_payload
 
 TRIGGER_BASES = [p.lower().rstrip(":").strip() for p in settings.triggers]
+FAQ_QUERIES = [
+    {
+        "title": "Facturas pendientes",
+        "desc": "Lista facturas pendientes de pago.",
+        "query": "dt: facturas pendientes de pago (cliente,fecha,monto,total)",
+    },
+    {
+        "title": "Total de facturas pendientes",
+        "desc": "Total adeudado por facturas pendientes.",
+        "query": "dt: total de facturas pendientes de pago",
+    },
+]
 
 log = logging.getLogger("teams_gw.bot")
 
@@ -74,41 +86,67 @@ class TeamsGatewayBot(ActivityHandler):
 
     async def on_message_activity(self, turn_context: TurnContext):
         value = turn_context.activity.value or {}
-        if isinstance(value, dict) and value.get("action") == "n2sql_more":
-            await self._send_more_rows(turn_context)
-            return
+        if isinstance(value, dict):
+            action = value.get("action")
+            if action == "n2sql_more":
+                await self._send_more_rows(turn_context)
+                return
+            if action == "n2sql_faq":
+                query = (value.get("query") or "").strip()
+                dataset = value.get("dataset")
+                if query:
+                    await self._run_query(turn_context, query, dataset, announce=False)
+                else:
+                    await turn_context.send_activity("No pude recuperar esa consulta rápida.")
+                return
 
         text = (turn_context.activity.text or "").strip()
 
         if self._matches_trigger(text):
             query, ds = self._extract_query_and_dataset(text)
-            await turn_context.send_activity("Entendido. Consultando…")
-            try:
-                payload = await client.ask(query, dataset=ds)
-            except Exception:
-                await turn_context.send_activity(
-                    "No pude resolver la consulta ahora. Inténtalo de nuevo más tarde."
-                )
-                return
+            await self._run_query(turn_context, query, ds)
+            return
 
-            await self._last_query_accessor.set(
-                turn_context,
-                {"payload": payload, "query": query, "dataset": ds, "stage": "initial"},
-            )
-            md = format_n2sql_payload(payload)
-            await turn_context.send_activity(Activity(text=md, text_format="markdown"))
-            await self.conversation_state.save_changes(turn_context)
-
-            if self._has_more_rows(payload):
-                try:
-                    await self._send_more_button(turn_context)
-                except Exception as exc:
-                    log.warning("No se pudo enviar el botón 'Ver más filas': %s", exc)
+        normalized = text.lower()
+        if normalized in {"faq", "preguntas frecuentes", "ayuda"}:
+            await self._send_faq_card(turn_context)
             return
 
         await turn_context.send_activity(
             "Para N2SQL usa `dt:` o `dt[dataset]:`. Ej.: `dt[odoo]: facturas pendientes de pago (cliente,monto,total)`"
         )
+        await self._send_faq_card(turn_context)
+
+    async def _run_query(
+        self,
+        turn_context: TurnContext,
+        query: str,
+        dataset: str | None,
+        announce: bool = True,
+    ):
+        if announce:
+            await turn_context.send_activity("Entendido. Consultando…")
+        try:
+            payload = await client.ask(query, dataset=dataset)
+        except Exception:
+            await turn_context.send_activity(
+                "No pude resolver la consulta ahora. Inténtalo de nuevo más tarde."
+            )
+            return
+
+        await self._last_query_accessor.set(
+            turn_context,
+            {"payload": payload, "query": query, "dataset": dataset, "stage": "initial"},
+        )
+        md = format_n2sql_payload(payload)
+        await turn_context.send_activity(Activity(text=md, text_format="markdown"))
+        await self.conversation_state.save_changes(turn_context)
+
+        if self._has_more_rows(payload):
+            try:
+                await self._send_more_button(turn_context)
+            except Exception as exc:
+                log.warning("No se pudo enviar el botón 'Ver más filas': %s", exc)
 
     def _has_more_rows(self, payload: dict[str, Any]) -> bool:
         total = self._total_rows(payload)
@@ -178,3 +216,59 @@ class TeamsGatewayBot(ActivityHandler):
         )
         message = MessageFactory.attachment(attachment)
         await turn_context.send_activity(message)
+
+    async def _send_faq_card(self, turn_context: TurnContext):
+        if not FAQ_QUERIES:
+            return
+        containers = []
+        for item in FAQ_QUERIES:
+            data = {"action": "n2sql_faq", "query": item.get("query")}
+            if item.get("dataset"):
+                data["dataset"] = item["dataset"]
+            containers.append(
+                {
+                    "type": "Container",
+                    "selectAction": {"type": "Action.Submit", "data": data},
+                    "items": [
+                        {
+                            "type": "TextBlock",
+                            "text": item["title"],
+                            "weight": "Bolder",
+                            "wrap": True,
+                        },
+                        {
+                            "type": "TextBlock",
+                            "text": item.get("desc", ""),
+                            "isSubtle": True,
+                            "spacing": "None",
+                            "wrap": True,
+                        },
+                    ],
+                    "separator": True,
+                }
+            )
+        card = {
+            "type": "AdaptiveCard",
+            "version": "1.5",
+            "body": [
+                {
+                    "type": "TextBlock",
+                    "text": "Preguntas frecuentes",
+                    "weight": "Bolder",
+                    "size": "Medium",
+                },
+                {
+                    "type": "TextBlock",
+                    "text": "Selecciona una consulta rápida:",
+                    "isSubtle": True,
+                    "wrap": True,
+                    "spacing": "Small",
+                },
+            ]
+            + containers,
+        }
+        attachment = Attachment(
+            content_type="application/vnd.microsoft.card.adaptive",
+            content=card,
+        )
+        await turn_context.send_activity(MessageFactory.attachment(attachment))
