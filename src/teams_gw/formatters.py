@@ -12,8 +12,14 @@ def format_n2sql_payload(payload: Dict[str, Any]) -> str:
     rows: List[List[Any]] = []
 
     if isinstance(payload, dict) and "columns" in payload and "rows" in payload:
-        headers = [str(c) for c in payload.get("columns", [])]
-        rows = payload.get("rows", [])
+        headers = [str(c) for c in payload.get("columns", []) if c is not None]
+        rows_data = payload.get("rows", []) or []
+        if rows_data and isinstance(rows_data[0], dict):
+            if not headers:
+                headers = list(rows_data[0].keys())
+            rows = [[row.get(h) for h in headers] for row in rows_data]
+        else:
+            rows = rows_data
     elif isinstance(payload, dict) and isinstance(payload.get("data"), list) and payload["data"]:
         first = payload["data"][0]
         if isinstance(first, dict):
