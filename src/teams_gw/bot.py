@@ -4,7 +4,7 @@ import logging
 from typing import Any
 
 from botbuilder.core import ActivityHandler, ConversationState, MessageFactory, TurnContext
-from botbuilder.schema import ActionTypes, Activity, CardAction, HeroCard
+from botbuilder.schema import ActionTypes, Activity, Attachment, CardAction, HeroCard
 from .settings import settings
 from .n2sql_client import client
 from .formatters import format_n2sql_payload
@@ -144,5 +144,9 @@ class TeamsGatewayBot(ActivityHandler):
                 )
             ],
         )
-        message = MessageFactory.attachment(card.to_attachment())
+        attachment = Attachment(
+            content_type="application/vnd.microsoft.card.hero",
+            content=card.__dict__,
+        )
+        message = MessageFactory.attachment(attachment)
         await turn_context.send_activity(message)
