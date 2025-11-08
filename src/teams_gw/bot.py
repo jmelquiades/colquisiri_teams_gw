@@ -244,13 +244,12 @@ class TeamsGatewayBot(ActivityHandler):
         for group in FAQ_QUERIES:
             section_id = f"faq_{group['title'].lower().replace(' ', '_')}"
             section_ids.append(section_id)
-            toggle_actions.append(
-                {
-                    "type": "Action.ToggleVisibility",
-                    "title": group["title"],
-                    "targetElements": [],
-                }
-            )
+            toggle_action = {
+                "type": "Action.ToggleVisibility",
+                "title": group["title"],
+                "targetElements": [],
+            }
+            toggle_actions.append(toggle_action)
             group_items = []
             for item in group["items"]:
                 data = {"action": "n2sql_faq", "query": item.get("query")}
