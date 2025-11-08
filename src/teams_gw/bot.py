@@ -10,7 +10,7 @@ from .n2sql_client import client
 from .formatters import format_n2sql_payload
 
 TRIGGER_BASES = [p.lower().rstrip(":").strip() for p in settings.triggers]
-FAQ_QUERIES = [
+FAQ_GROUPS = [
     {
         "title": "Facturación",
         "items": [
@@ -18,13 +18,11 @@ FAQ_QUERIES = [
                 "title": "Facturas pendientes",
                 "desc": "Lista facturas pendientes de pago.",
                 "query": "facturas pendientes de pago (cliente,fecha,monto,total)",
-                "dataset": None,
             },
             {
                 "title": "Total de facturas pendientes",
                 "desc": "Total adeudado por facturas pendientes.",
                 "query": "total de facturas pendientes de pago",
-                "dataset": None,
             },
         ],
     },
@@ -35,7 +33,6 @@ FAQ_QUERIES = [
                 "title": "Datos de clientes",
                 "desc": "Información básica de clientes.",
                 "query": "datos de clientes (cliente,correo,telefono)",
-                "dataset": None,
             }
         ],
     },
@@ -111,9 +108,8 @@ class TeamsGatewayBot(ActivityHandler):
                 return
             if action == "n2sql_faq":
                 query = (value.get("query") or "").strip()
-                dataset = value.get("dataset")
                 if query:
-                    await self._run_query(turn_context, query, dataset, announce=False)
+                    await self._run_query(turn_context, query, None, announce=False)
                 else:
                     await turn_context.send_activity("No pude recuperar esa consulta rápida.")
                 return
@@ -235,16 +231,14 @@ class TeamsGatewayBot(ActivityHandler):
         message = MessageFactory.attachment(attachment)
         await turn_context.send_activity(message)
 
-    async def _send_faq_card(self, turn_context: TurnContext, expanded_group: str | None = None):
-        if not FAQ_QUERIES:
+    async def _send_faq_card(self, turn_context: TurnContext):
+        if not FAQ_GROUPS:
             return
         sections = []
-        for group in FAQ_QUERIES:
+        for group in FAQ_GROUPS:
             items = []
             for item in group["items"]:
                 data = {"action": "n2sql_faq", "query": item.get("query")}
-                if item.get("dataset"):
-                    data["dataset"] = item["dataset"]
                 items.append(
                     {
                         "type": "Container",
@@ -268,7 +262,6 @@ class TeamsGatewayBot(ActivityHandler):
                                     {
                                         "type": "Action.Submit",
                                         "title": "Ejecutar",
-                                        "style": "positive",
                                         "data": data,
                                     }
                                 ],
