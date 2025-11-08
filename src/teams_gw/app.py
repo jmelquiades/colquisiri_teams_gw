@@ -38,6 +38,12 @@ for env_key, env_value in {
     if env_value:
         os.environ[env_key] = env_value
 
+os.environ["MicrosoftAppType"] = "SingleTenant"
+if settings.MICROSOFT_APP_TENANT_ID:
+    os.environ["MicrosoftAppTenantId"] = settings.MICROSOFT_APP_TENANT_ID
+if settings.MICROSOFT_APP_OAUTH_SCOPE:
+    os.environ["MicrosoftAppOAuthScope"] = settings.MICROSOFT_APP_OAUTH_SCOPE
+
 
 adapter_settings = BotFrameworkAdapterSettings(
     settings.MICROSOFT_APP_ID,
