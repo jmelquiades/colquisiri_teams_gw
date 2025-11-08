@@ -1,12 +1,18 @@
 from __future__ import annotations
+
+import logging
 from typing import Any
-from botbuilder.core import ActivityHandler, TurnContext, ConversationState
-from botbuilder.schema import Activity, CardAction, ActionTypes, HeroCard
+
+from botbuilder.core import ActivityHandler, ConversationState, TurnContext
+from botbuilder.schema import ActionTypes, Activity, CardAction, HeroCard
 from .settings import settings
 from .n2sql_client import client
 from .formatters import format_n2sql_payload
 
 TRIGGER_BASES = [p.lower().rstrip(":").strip() for p in settings.triggers]
+
+log = logging.getLogger("teams_gw.bot")
+
 
 class TeamsGatewayBot(ActivityHandler):
     def __init__(self, conversation_state: ConversationState):
@@ -79,20 +85,25 @@ class TeamsGatewayBot(ActivityHandler):
             await turn_context.send_activity("Entendido. Consultando…")
             try:
                 payload = await client.ask(query, dataset=ds)
-                await self._last_query_accessor.set(
-                    turn_context,
-                    {"payload": payload, "query": query, "dataset": ds},
-                )
-                md = format_n2sql_payload(payload)
-                await turn_context.send_activity(Activity(text=md, text_format="markdown"))
-                await self.conversation_state.save_changes(turn_context)
-
-                if self._has_more_rows(payload):
-                    await self._send_more_button(turn_context)
             except Exception:
                 await turn_context.send_activity(
                     "No pude resolver la consulta ahora. Inténtalo de nuevo más tarde."
                 )
+                return
+
+            await self._last_query_accessor.set(
+                turn_context,
+                {"payload": payload, "query": query, "dataset": ds},
+            )
+            md = format_n2sql_payload(payload)
+            await turn_context.send_activity(Activity(text=md, text_format="markdown"))
+            await self.conversation_state.save_changes(turn_context)
+
+            if self._has_more_rows(payload):
+                try:
+                    await self._send_more_button(turn_context)
+                except Exception as exc:
+                    log.warning("No se pudo enviar el botón 'Ver más filas': %s", exc)
             return
 
         await turn_context.send_activity(
