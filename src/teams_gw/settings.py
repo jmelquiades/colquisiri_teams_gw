@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     N2SQL_QUERY_PATH: str = "/v1/query"
     N2SQL_API_KEY: Optional[str] = None
     N2SQL_TIMEOUT_S: int = 30
+    N2SQL_SHOW_SQL: bool = False
 
     APP_TZ: str = "America/Lima"
     N2SQL_TRIGGERS: str = "dt:,consulta ,n2sql:"

@@ -50,7 +50,10 @@ def format_n2sql_payload(payload: Dict[str, Any]) -> str:
     if total > len(rows):
         extra = f"\n\n_Se muestran {len(rows)}/{total} filas. Configura `N2SQL_MAX_ROWS` para ver más._"
 
-    sql = payload.get("sql") or payload.get("generated_sql") or payload.get("sql_text")
-    sql_md = f"\n\n> SQL: `{sql}`" if sql else ""
+    sql_md = ""
+    if settings.N2SQL_SHOW_SQL:
+        sql = payload.get("sql") or payload.get("generated_sql") or payload.get("sql_text")
+        if sql:
+            sql_md = f"\n\n> SQL: `{sql}`"
 
     return f"{table}{extra}{sql_md}"
