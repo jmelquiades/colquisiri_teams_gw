@@ -33,6 +33,11 @@ def test_table_rows_dicts_without_columns():
     assert "cliente | total" in md
     assert "B | 20" in md
 
+def test_limit_override():
+    payload = {"columns": ["a"], "rows": [[1], [2], [3]]}
+    md = format_n2sql_payload(payload, max_rows=2)
+    assert "1" in md and "2" in md and "3" not in md
+
 def test_fallback_json():
     payload = {"unexpected": 1}
     md = format_n2sql_payload(payload)

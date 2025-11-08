@@ -1,8 +1,8 @@
 from __future__ import annotations
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from .settings import settings
 
-def format_n2sql_payload(payload: Dict[str, Any]) -> str:
+def format_n2sql_payload(payload: Dict[str, Any], max_rows: Optional[int] = None) -> str:
     """Convierte payload a tabla Markdown. Acepta:
     - {"columns": [...], "rows": [[...]]}
     - {"data": [{...}, ...]}
@@ -36,7 +36,8 @@ def format_n2sql_payload(payload: Dict[str, Any]) -> str:
         return f"````json\n{payload}\n````"
 
     total = len(rows)
-    rows = rows[: settings.N2SQL_MAX_ROWS]
+    limit = max_rows or settings.N2SQL_MAX_ROWS
+    rows = rows[: limit]
 
     if not headers:
         return "_Sin columnas_"
@@ -48,7 +49,10 @@ def format_n2sql_payload(payload: Dict[str, Any]) -> str:
 
     extra = ""
     if total > len(rows):
-        extra = f"\n\n_Se muestran {len(rows)}/{total} filas. Configura `N2SQL_MAX_ROWS` para ver más._"
+        if max_rows:
+            extra = f"\n\n_Se muestran {len(rows)}/{total} filas._"
+        else:
+            extra = f"\n\n_Se muestran {len(rows)}/{total} filas. Configura `N2SQL_MAX_ROWS` para ver más._"
 
     sql_md = ""
     if settings.N2SQL_SHOW_SQL:

@@ -99,7 +99,7 @@ ADAPTER_KIND = "BotFrameworkAdapter"
 
 
 conversation_state = ConversationState(MemoryStorage())
-bot = TeamsGatewayBot()
+bot = TeamsGatewayBot(conversation_state)
 
 @app.post("/api/messages")
 async def messages(request: Request):

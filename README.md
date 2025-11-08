@@ -80,7 +80,8 @@ Copiar código
 | | `N2SQL_API_KEY` | Token opcional para N2SQL |
 | | `N2SQL_TIMEOUT_S` | Timeout en segundos (30 por defecto) |
 | Gateway | `N2SQL_TRIGGERS` | Triggers válidos (`dt:,consulta ,n2sql:`) |
-| | `N2SQL_MAX_ROWS` | Filas máximas a renderizar (20 por defecto) |
+| | `N2SQL_MAX_ROWS` | Filas máximas a renderizar en la respuesta inicial (20) |
+| | `N2SQL_MAX_ROWS_EXPANDED` | Filas al pulsar “Ver más filas” (60) |
 | | `N2SQL_SHOW_SQL` | `true/false` para mostrar la sentencia SQL en la respuesta |
 | | `LOG_LEVEL` | Nivel de logging (`INFO`) |
 
@@ -90,4 +91,5 @@ Copiar código
   - `dt: facturas pendientes de pago (cliente,fecha,monto,total)`
   - `dt[odoo]: ventas por cliente`
 - El bot validará el trigger, enviará la consulta a N2SQL y devolverá una tabla Markdown (hasta `N2SQL_MAX_ROWS` filas) y, si `N2SQL_SHOW_SQL=true`, el bloque SQL.
+- Cuando haya más datos, aparecerá el botón **Ver más filas** (usa `messageBack`) que vuelve a renderizar la consulta con `N2SQL_MAX_ROWS_EXPANDED`.
 - Si no incluyes el trigger, responderá con las instrucciones de uso.
