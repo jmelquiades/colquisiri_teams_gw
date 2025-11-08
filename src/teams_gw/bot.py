@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from botbuilder.core import ActivityHandler, ConversationState, TurnContext
+from botbuilder.core import ActivityHandler, ConversationState, MessageFactory, TurnContext
 from botbuilder.schema import ActionTypes, Activity, CardAction, HeroCard
 from .settings import settings
 from .n2sql_client import client
@@ -144,4 +144,5 @@ class TeamsGatewayBot(ActivityHandler):
                 )
             ],
         )
-        await turn_context.send_activity(Activity(attachments=[card.to_attachment()]))
+        message = MessageFactory.attachment(card.to_attachment())
+        await turn_context.send_activity(message)
