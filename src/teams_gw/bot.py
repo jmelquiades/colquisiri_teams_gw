@@ -274,11 +274,11 @@ class TeamsGatewayBot(ActivityHandler):
                 section_id = f"faq_section_{idx}"
                 column = {
                     "type": "Column",
-                    "width": "stretch",
+                    "width": "auto",
                     "items": [
                         {
                             "type": "ActionSet",
-                            "spacing": "Small",
+                            "spacing": "None",
                             "actions": [
                                 {
                                     "type": "Action.ToggleVisibility",
@@ -349,7 +349,8 @@ class TeamsGatewayBot(ActivityHandler):
             body.append(
                 {
                     "type": "ColumnSet",
-                    "spacing": "Medium",
+                    "horizontalAlignment": "Left",
+                    "spacing": "Small",
                     "columns": columns,
                 }
             )
