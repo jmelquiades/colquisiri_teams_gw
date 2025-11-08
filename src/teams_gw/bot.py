@@ -322,10 +322,11 @@ class TeamsGatewayBot(ActivityHandler):
         }
         # Ajustar targets para que solo un grupo esté visible
         for action, section_id in toggle_actions:
-            action["targetElements"] = [
-                {"elementId": sid, "isVisible": sid == section_id, "mode": ("toggle" if sid == section_id else "hide")}
-                for sid in section_ids
-            ]
+            targets = []
+            for sid in section_ids:
+                mode = "toggle" if sid == section_id else "hide"
+                targets.append({"elementId": sid, "mode": mode})
+            action["targetElements"] = targets
         attachment = Attachment(
             content_type="application/vnd.microsoft.card.adaptive",
             content=card,
