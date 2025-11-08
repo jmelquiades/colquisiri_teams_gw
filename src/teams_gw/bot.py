@@ -238,34 +238,62 @@ class TeamsGatewayBot(ActivityHandler):
     async def _send_faq_card(self, turn_context: TurnContext):
         if not FAQ_QUERIES:
             return
-        actions = []
+        toggle_actions = []
+        containers = []
         for group in FAQ_QUERIES:
-            show_card = {
-                "type": "Action.ShowCard",
-                "title": group["title"],
-                "card": {
-                    "type": "AdaptiveCard",
-                    "version": "1.5",
-                    "body": [],
-                    "actions": [],
-                },
-            }
+            section_id = f"faq_{group['title'].lower().replace(' ', '_')}"
+            toggle_actions.append(
+                {
+                    "type": "Action.ToggleVisibility",
+                    "title": group["title"],
+                    "targetElements": [section_id],
+                }
+            )
+            group_items = []
             for item in group["items"]:
                 data = {"action": "n2sql_faq", "query": item.get("query")}
                 if item.get("dataset"):
                     data["dataset"] = item["dataset"]
-                show_card["card"]["body"].append(
+                group_items.append(
                     {
-                        "type": "TextBlock",
-                        "text": f"**{item['title']}**\n{item.get('desc', '')}",
-                        "wrap": True,
-                        "spacing": "Small",
+                        "type": "Container",
+                        "items": [
+                            {
+                                "type": "TextBlock",
+                                "text": f"**{item['title']}**",
+                                "wrap": True,
+                            },
+                            {
+                                "type": "TextBlock",
+                                "text": item.get("desc", ""),
+                                "isSubtle": True,
+                                "spacing": "None",
+                                "wrap": True,
+                            },
+                            {
+                                "type": "ActionSet",
+                                "spacing": "Small",
+                                "actions": [
+                                    {
+                                        "type": "Action.Submit",
+                                        "title": "Ejecutar",
+                                        "data": data,
+                                    }
+                                ],
+                            },
+                        ],
+                        "separator": True,
+                        "spacing": "Medium",
                     }
                 )
-                show_card["card"]["actions"].append(
-                    {"type": "Action.Submit", "title": "Ejecutar", "data": data}
-                )
-            actions.append(show_card)
+            containers.append(
+                {
+                    "type": "Container",
+                    "id": section_id,
+                    "isVisible": False,
+                    "items": group_items,
+                }
+            )
         card = {
             "type": "AdaptiveCard",
             "version": "1.5",
@@ -283,8 +311,12 @@ class TeamsGatewayBot(ActivityHandler):
                     "wrap": True,
                     "spacing": "Small",
                 },
-            ],
-            "actions": actions,
+                {
+                    "type": "ActionSet",
+                    "actions": toggle_actions,
+                },
+            ]
+            + containers,
         }
         attachment = Attachment(
             content_type="application/vnd.microsoft.card.adaptive",
